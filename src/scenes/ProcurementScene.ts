@@ -100,7 +100,7 @@ export class ProcurementScene extends Phaser.Scene {
 
     private createBumpers(width: number) {
         this.bumpers = [
-            { x: width / 2, y: 1010, radius: 88, label: 'JACKPOT', value: 100_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20 },
+            { x: width / 2, y: 650, radius: 72, label: 'JACKPOT', value: 100_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20 },
             { x: 210, y: 1000, radius: 46, label: 'AUDIT FAILED', value: 50_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50 },
             { x: width - 210, y: 1000, radius: 46, label: 'COST OVERRUN', value: 25_000_000, delay: 0.2, color: 0xff5544, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 5 },
             { x: width / 2, y: 1490, radius: 44, label: 'URGENT NEED', value: 10_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10 },
@@ -221,7 +221,7 @@ export class ProcurementScene extends Phaser.Scene {
         // Tapping higher/lower on the launch lane changes the aim. A small bounded
         // variance prevents identical launches from repeating the same route.
         const launchY = Phaser.Math.Clamp(pointer?.y ?? 1450, 1340, 1560);
-        const playerAim = Phaser.Math.Linear(-300, 160, (launchY - 1340) / 220);
+        const playerAim = Phaser.Math.Linear(-760, 200, (launchY - 1340) / 220);
         this.ballVelocity.set(playerAim + Phaser.Math.Between(-70, 70), -Phaser.Math.Between(1010, 1130));
         this.bumperHits = 0;
         this.launchAge = 0;
@@ -289,7 +289,25 @@ export class ProcurementScene extends Phaser.Scene {
             this.ballVelocity.y = Math.max(this.ballVelocity.y, 700);
             this.statusText.setText('BOARD TILT — BALL RETURNING TO PLUNGER');
         }
-        if (this.ball.y > height - 170) this.drainBall();
+        this.checkDrain(height, width);
+    }
+
+    private checkDrain(height: number, width: number) {
+        if (!this.ball || this.ball.y <= height - 170) return;
+
+        // The only opening is the center trough between the two paddles.
+        const drainLeft = 455;
+        const drainRight = width - 455;
+        if (this.ball.x >= drainLeft && this.ball.x <= drainRight) {
+            this.drainBall();
+            return;
+        }
+
+        // The lower side aprons return balls to the playfield instead of allowing
+        // them to vanish at the bottom edge.
+        this.ball.y = height - 170;
+        this.ballVelocity.y = -Math.max(520, Math.abs(this.ballVelocity.y) * 0.72);
+        this.ballVelocity.x *= 0.92;
     }
 
     private checkRails(width: number) {
@@ -351,7 +369,8 @@ export class ProcurementScene extends Phaser.Scene {
         if (!this.ball) return;
         for (const slide of this.slides) {
             const centerX = this.slideCenterAtY(slide, this.ball.y);
-            const inside = centerX !== undefined && Math.abs(this.ball.x - centerX) < slide.width / 2;
+            const inside = centerX !== undefined && this.ballVelocity.y > 0
+                && Math.abs(this.ball.x - centerX) < slide.width / 2;
             if (!inside || (this.slideCooldown.get(slide.name) ?? 0) > this.time.now) continue;
 
             this.slideCooldown.set(slide.name, this.time.now + 650);
