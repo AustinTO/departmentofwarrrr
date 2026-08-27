@@ -24,6 +24,14 @@ interface Rail {
     y2: number;
 }
 
+interface Obstacle {
+    x: number;
+    y: number;
+    radius: number;
+    label: string;
+    color: number;
+}
+
 /** A deterministic touch-first pinball minigame that avoids a second physics plugin. */
 export class ProcurementScene extends Phaser.Scene {
     private ball?: Phaser.GameObjects.Arc;
@@ -44,6 +52,7 @@ export class ProcurementScene extends Phaser.Scene {
     private rightPressed = false;
     private contractAuthorized = false;
     private rails: Rail[] = [];
+    private obstacles: Obstacle[] = [];
     private bumperHits = 0;
     private launchAge = 0;
 
@@ -85,7 +94,11 @@ export class ProcurementScene extends Phaser.Scene {
             { x: width / 2, y: 1010, radius: 88, label: 'JACKPOT', value: 100_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20 },
             { x: 210, y: 1000, radius: 46, label: 'AUDIT FAILED', value: 50_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50 },
             { x: width - 210, y: 1000, radius: 46, label: 'COST OVERRUN', value: 25_000_000, delay: 0.2, color: 0xff5544, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 5 },
-            { x: width / 2, y: 1490, radius: 44, label: 'URGENT NEED', value: 10_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10 }
+            { x: width / 2, y: 1490, radius: 44, label: 'URGENT NEED', value: 10_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10 },
+            { x: 310, y: 760, radius: 30, label: 'TARGET ACQUIRED', value: 3_000_000, delay: 0.1, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 40 },
+            { x: width - 310, y: 760, radius: 30, label: 'TARGET ACQUIRED', value: 3_000_000, delay: 0.1, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 40 },
+            { x: 290, y: 1280, radius: 28, label: 'RISK PREMIUM', value: 5_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2 },
+            { x: width - 290, y: 1280, radius: 28, label: 'RISK PREMIUM', value: 5_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2 }
         ];
 
         this.bumpers.forEach((bumper) => {
@@ -95,6 +108,10 @@ export class ProcurementScene extends Phaser.Scene {
                 fontSize: bumper.radius > 60 ? '22px' : '14px', color: '#fff4c9', fontStyle: 'bold', align: 'center', stroke: '#000000', strokeThickness: 3
             }).setOrigin(0.5);
         });
+
+        this.add.text(width / 2, 1110, 'KEEP THE REQUIREMENT MOVING', {
+            fontSize: '16px', color: '#9bcbd4', fontStyle: 'bold'
+        }).setOrigin(0.5);
     }
 
     private createFlippers(width: number) {
@@ -114,6 +131,26 @@ export class ProcurementScene extends Phaser.Scene {
             { x1: 180, y1: 1140, x2: 180, y2: 1510 },
             { x1: width - 180, y1: 1140, x2: width - 180, y2: 1510 }
         ];
+
+        this.obstacles = [
+            { x: 360, y: 820, radius: 32, label: 'LEFT BANK', color: 0x4e8dff },
+            { x: width - 360, y: 820, radius: 32, label: 'RIGHT BANK', color: 0x4e8dff },
+            { x: 330, y: 930, radius: 28, label: 'LEFT BANK LOW', color: 0x63d66b },
+            { x: width - 330, y: 930, radius: 28, label: 'RIGHT BANK LOW', color: 0x63d66b },
+            { x: width / 2, y: 820, radius: 38, label: 'CENTER SLINGSHOT', color: 0xffca4f },
+            { x: 360, y: 1160, radius: 28, label: 'LEFT RETURN', color: 0x63d66b },
+            { x: width - 360, y: 1160, radius: 28, label: 'RIGHT RETURN', color: 0x63d66b },
+            { x: 350, y: 1390, radius: 32, label: 'LEFT DIVERTER', color: 0xff765e },
+            { x: width - 350, y: 1390, radius: 32, label: 'RIGHT DIVERTER', color: 0xff765e }
+        ];
+
+        this.obstacles.forEach((obstacle) => {
+            this.add.triangle(obstacle.x, obstacle.y, 0, obstacle.radius, obstacle.radius, -obstacle.radius, -obstacle.radius, -obstacle.radius, obstacle.color, 0.35)
+                .setStrokeStyle(3, obstacle.color, 0.9);
+            this.add.text(obstacle.x, obstacle.y + obstacle.radius + 5, '◆', {
+                fontSize: '12px', color: '#eaffed'
+            }).setOrigin(0.5);
+        });
     }
 
     private createControls(width: number, height: number) {
@@ -215,6 +252,7 @@ export class ProcurementScene extends Phaser.Scene {
         }
 
         this.checkFlippers(width);
+        this.checkObstacles();
         this.checkBumpers();
         // A pinball should eventually return to the player. This prevents a perfect
         // bumper orbit from farming one contract forever while preserving skillful play.
@@ -257,6 +295,26 @@ export class ProcurementScene extends Phaser.Scene {
             if (distance > this.ballRadius + 28 || this.ball.y < this.flipperY - 65 || this.ball.y > this.flipperY + 55) continue;
             this.ball.y = this.flipperY - this.ballRadius - 12;
             this.ballVelocity.set(flipper.side === 'left' ? 620 : -620, -1120);
+        }
+    }
+
+    private checkObstacles() {
+        if (!this.ball) return;
+        for (const obstacle of this.obstacles) {
+            const dx = this.ball.x - obstacle.x;
+            const dy = this.ball.y - obstacle.y;
+            const distance = Math.hypot(dx, dy);
+            if (distance > obstacle.radius + this.ballRadius || distance === 0) continue;
+
+            const normal = new Phaser.Math.Vector2(dx, dy).normalize();
+            this.ball.x = obstacle.x + normal.x * (obstacle.radius + this.ballRadius + 2);
+            this.ball.y = obstacle.y + normal.y * (obstacle.radius + this.ballRadius + 2);
+            const speed = Math.max(650, this.ballVelocity.length());
+            this.ballVelocity.copy(normal.scale(speed));
+            this.ballVelocity.y = Math.min(this.ballVelocity.y, -300);
+            const key = `obstacle-${obstacle.label}`;
+            if ((this.lastBumperHit.get(key) ?? 0) + 160 > this.time.now) continue;
+            this.lastBumperHit.set(key, this.time.now);
         }
     }
 
