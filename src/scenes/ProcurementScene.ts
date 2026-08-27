@@ -100,9 +100,9 @@ export class ProcurementScene extends Phaser.Scene {
     private createFlippers(width: number) {
         // The source artwork hinges on the outside ends, not at the rectangle centers.
         this.leftFlipper = this.add.rectangle(270, this.flipperY, this.flipperLength, 38, 0xf5ead5, 0.88)
-            .setOrigin(0, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(-18);
+            .setOrigin(0, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(18);
         this.rightFlipper = this.add.rectangle(width - 270, this.flipperY, this.flipperLength, 38, 0xf5ead5, 0.88)
-            .setOrigin(1, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(18);
+            .setOrigin(1, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(-18);
     }
 
     private createRails(width: number) {
@@ -179,10 +179,10 @@ export class ProcurementScene extends Phaser.Scene {
     private releaseFlipper(side: FlipperSide, _width: number) {
         if (side === 'left') {
             this.leftPressed = false;
-            this.leftFlipper.setAngle(-18);
+            this.leftFlipper.setAngle(18);
         } else {
             this.rightPressed = false;
-            this.rightFlipper.setAngle(18);
+            this.rightFlipper.setAngle(-18);
         }
     }
 
