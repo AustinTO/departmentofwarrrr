@@ -121,9 +121,12 @@ export class ProcurementScene extends Phaser.Scene {
         this.add.text(width - 173, 1450, 'LAUNCH\nREQ', {
             fontSize: '21px', color: '#d8efff', align: 'center', fontStyle: 'bold', stroke: '#00111f', strokeThickness: 3
         }).setOrigin(0.5);
-        launch.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
+        this.add.text(width - 173, 1585, 'TAP HIGH / LOW\nTO AIM', {
+            fontSize: '14px', color: '#b7eaff', align: 'center', fontStyle: 'bold'
+        }).setOrigin(0.5);
+        launch.on('pointerdown', (pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
             event.stopPropagation();
-            this.launchBall();
+            this.launchBall(pointer);
         });
 
         this.authorizeButton = this.add.rectangle(width / 2, height - 112, 430, 84, 0x087a42, 0.92).setStrokeStyle(3, 0xa8ff93).setInteractive({ useHandCursor: true });
@@ -147,11 +150,15 @@ export class ProcurementScene extends Phaser.Scene {
         this.input.keyboard?.on('keydown-ESC', () => this.scene.start('MansionScene'));
     }
 
-    private launchBall() {
+    private launchBall(pointer?: Phaser.Input.Pointer) {
         if (this.ball || this.contractAuthorized) return;
         const { width } = this.scale;
         this.ball = this.add.circle(width - 173, 1365, 19, 0xf5f1dc).setStrokeStyle(3, 0xffffff);
-        this.ballVelocity.set(-150, -1060);
+        // Tapping higher/lower on the launch lane changes the aim. A small bounded
+        // variance prevents identical launches from repeating the same route.
+        const launchY = Phaser.Math.Clamp(pointer?.y ?? 1450, 1340, 1560);
+        const playerAim = Phaser.Math.Linear(-300, 160, (launchY - 1340) / 220);
+        this.ballVelocity.set(playerAim + Phaser.Math.Between(-70, 70), -Phaser.Math.Between(1010, 1130));
         this.bumperHits = 0;
         this.launchAge = 0;
         this.lastBumperHit.clear();
@@ -161,10 +168,10 @@ export class ProcurementScene extends Phaser.Scene {
     private pressFlipper(side: FlipperSide, width: number) {
         if (side === 'left') {
             this.leftPressed = true;
-            this.leftFlipper.setAngle(12);
+            this.leftFlipper.setAngle(-42);
         } else {
             this.rightPressed = true;
-            this.rightFlipper.setAngle(-12);
+            this.rightFlipper.setAngle(42);
         }
         this.kickBall(side, width);
     }
