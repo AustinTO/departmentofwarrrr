@@ -32,6 +32,16 @@ interface Obstacle {
     color: number;
 }
 
+interface Slide {
+    name: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    exitY: number;
+    color: number;
+}
+
 /** A deterministic touch-first pinball minigame that avoids a second physics plugin. */
 export class ProcurementScene extends Phaser.Scene {
     private ball?: Phaser.GameObjects.Arc;
@@ -53,6 +63,8 @@ export class ProcurementScene extends Phaser.Scene {
     private contractAuthorized = false;
     private rails: Rail[] = [];
     private obstacles: Obstacle[] = [];
+    private slides: Slide[] = [];
+    private slideCooldown = new Map<string, number>();
     private bumperHits = 0;
     private launchAge = 0;
 
@@ -151,6 +163,23 @@ export class ProcurementScene extends Phaser.Scene {
                 fontSize: '12px', color: '#eaffed'
             }).setOrigin(0.5);
         });
+
+        this.slides = [
+            { name: 'LEFT RED SLIDE', x: 145, y: 470, width: 105, height: 470, exitY: 940, color: 0xff3d45 },
+            { name: 'RIGHT RED SLIDE', x: width - 145, y: 470, width: 105, height: 470, exitY: 940, color: 0xff3d45 },
+            { name: 'LEFT RETURN SLIDE', x: 145, y: 1130, width: 105, height: 330, exitY: 1460, color: 0x5de6ff },
+            { name: 'RIGHT RETURN SLIDE', x: width - 145, y: 1130, width: 105, height: 330, exitY: 1460, color: 0x5de6ff }
+        ];
+        this.slides.forEach((slide) => {
+            const guide = this.add.graphics();
+            guide.lineStyle(3, slide.color, 0.42);
+            guide.strokeRect(slide.x - slide.width / 2, slide.y, slide.width, slide.height);
+            guide.lineBetween(slide.x - 10, slide.y + 25, slide.x - 10, slide.exitY - 25);
+            guide.lineBetween(slide.x + 10, slide.y + 25, slide.x + 10, slide.exitY - 25);
+            this.add.text(slide.x, slide.y + 18, 'SLIDE', {
+                fontSize: '13px', color: slide.color === 0xff3d45 ? '#ffb2b6' : '#b7f5ff', fontStyle: 'bold'
+            }).setOrigin(0.5);
+        });
     }
 
     private createControls(width: number, height: number) {
@@ -198,6 +227,7 @@ export class ProcurementScene extends Phaser.Scene {
         this.ballVelocity.set(playerAim + Phaser.Math.Between(-70, 70), -Phaser.Math.Between(1010, 1130));
         this.bumperHits = 0;
         this.launchAge = 0;
+        this.slideCooldown.clear();
         this.lastBumperHit.clear();
         this.statusText.setText('HIT BUMPERS TO INFLATE THE REQUIREMENT');
     }
@@ -252,6 +282,7 @@ export class ProcurementScene extends Phaser.Scene {
         }
 
         this.checkFlippers(width);
+        this.checkSlides();
         this.checkObstacles();
         this.checkBumpers();
         // A pinball should eventually return to the player. This prevents a perfect
@@ -315,6 +346,28 @@ export class ProcurementScene extends Phaser.Scene {
             const key = `obstacle-${obstacle.label}`;
             if ((this.lastBumperHit.get(key) ?? 0) + 160 > this.time.now) continue;
             this.lastBumperHit.set(key, this.time.now);
+        }
+    }
+
+    private checkSlides() {
+        if (!this.ball) return;
+        for (const slide of this.slides) {
+            const inside = this.ball.x > slide.x - slide.width / 2 && this.ball.x < slide.x + slide.width / 2
+                && this.ball.y > slide.y && this.ball.y < slide.exitY;
+            if (!inside || (this.slideCooldown.get(slide.name) ?? 0) > this.time.now) continue;
+
+            this.slideCooldown.set(slide.name, this.time.now + 650);
+            this.ball.x = slide.x;
+            this.ballVelocity.set(0, 760);
+            this.statusText.setText(`${slide.name} ENGAGED — BALL ROUTED DOWN-LANE`);
+            const pulse = this.add.rectangle(slide.x, slide.y + slide.height / 2, slide.width, 8, slide.color, 0.85);
+            this.tweens.add({
+                targets: pulse,
+                alpha: 0,
+                scaleX: 0.25,
+                duration: 420,
+                onComplete: () => pulse.destroy()
+            });
         }
     }
 
