@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { currentRun } from '../state/RunState';
 
 export class LeaderboardScene extends Phaser.Scene {
     constructor() {
@@ -17,6 +18,10 @@ export class LeaderboardScene extends Phaser.Scene {
             fontStyle: 'bold'
         }).setOrigin(0.5);
 
+        this.add.text(width / 2, 165, 'THE MORE YOU BURN, THE HIGHER YOU RANK', {
+            fontSize: '22px', color: '#ffcf66', fontStyle: 'bold'
+        }).setOrigin(0.5);
+
         this.displayScores(width, height);
 
         this.add.container(width / 2 - 220, height - 100)
@@ -25,6 +30,8 @@ export class LeaderboardScene extends Phaser.Scene {
             .setSize(400, 100)
             .setInteractive()
             .on('pointerdown', () => {
+                currentRun.reset();
+                currentRun.save();
                 window.location.reload();
             });
 
@@ -71,7 +78,12 @@ export class LeaderboardScene extends Phaser.Scene {
     private getScores(): any[] {
         const saved = localStorage.getItem('warrr_leaderboard_v1');
         if (saved) {
-            return JSON.parse(saved);
+            try {
+                const scores = JSON.parse(saved);
+                return Array.isArray(scores) ? scores : [];
+            } catch {
+                localStorage.removeItem('warrr_leaderboard_v1');
+            }
         }
         return [];
     }

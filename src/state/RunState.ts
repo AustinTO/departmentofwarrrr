@@ -73,6 +73,19 @@ export class RunState {
 
     public productionQueue: DeliveryBatch[] = [];
 
+    /** Return the campaign to a clean, playable first-year state. */
+    public reset() {
+        this.currentFY = 2026;
+        this.globalReadiness = 100;
+        this.taxpayerBurn = 0;
+        this.contractorProfit = 0;
+        this.executiveWealth = 0;
+        this.mansionsBuilt = 0;
+        this.activeDoctrine = null;
+        this.productionQueue = [];
+        this.theaters = new RunState().theaters;
+    }
+
     public updateGlobalReadiness() {
         const theaterValues = Object.values(this.theaters);
         const sum = theaterValues.reduce((acc, t) => acc + t.readiness, 0);
@@ -107,6 +120,7 @@ export class RunState {
             contractorProfit: this.contractorProfit,
             executiveWealth: this.executiveWealth,
             mansionsBuilt: this.mansionsBuilt,
+            activeDoctrine: this.activeDoctrine,
             theaters: this.theaters,
             productionQueue: this.productionQueue
         };
@@ -115,10 +129,31 @@ export class RunState {
 
     public load() {
         const saved = localStorage.getItem('warrr_save_v1');
-        if (saved) {
-            const data = JSON.parse(saved);
-            Object.assign(this, data);
+        if (!saved) return;
+
+        try {
+            const data = JSON.parse(saved) as Partial<RunState>;
+            if (typeof data.currentFY === 'number') this.currentFY = data.currentFY;
+            if (typeof data.taxpayerBurn === 'number') this.taxpayerBurn = data.taxpayerBurn;
+            if (typeof data.contractorProfit === 'number') this.contractorProfit = data.contractorProfit;
+            if (typeof data.executiveWealth === 'number') this.executiveWealth = data.executiveWealth;
+            if (typeof data.mansionsBuilt === 'number') this.mansionsBuilt = data.mansionsBuilt;
+            if (data.activeDoctrine) this.activeDoctrine = data.activeDoctrine;
+            if (Array.isArray(data.productionQueue)) this.productionQueue = data.productionQueue;
+
+            // Merge saved theaters into the defaults so an older save cannot remove a theater.
+            if (data.theaters) {
+                Object.entries(data.theaters).forEach(([id, savedTheater]) => {
+                    const theater = this.theaters[id];
+                    if (!theater || !savedTheater) return;
+                    theater.readiness = typeof savedTheater.readiness === 'number' ? savedTheater.readiness : theater.readiness;
+                    theater.inventory = { ...theater.inventory, ...savedTheater.inventory };
+                });
+            }
             this.updateGlobalReadiness();
+        } catch {
+            // A corrupt local save should never prevent a new campaign from booting.
+            localStorage.removeItem('warrr_save_v1');
         }
     }
 }

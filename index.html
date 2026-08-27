@@ -8,7 +8,7 @@
       body {
         margin: 0;
         padding: 0;
-        background-color: #000;
+        background: radial-gradient(circle at center, #102a3a 0%, #020509 72%);
         overflow: hidden;
         display: flex;
         justify-content: center;
@@ -22,7 +22,10 @@
         display: flex;
         justify-content: center;
         align-items: center;
+        filter: drop-shadow(0 0 28px rgba(43, 200, 255, 0.18));
       }
+
+      canvas { image-rendering: auto; }
     </style>
   </head>
   <body>

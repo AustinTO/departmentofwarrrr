@@ -23,6 +23,10 @@ export class DoctrineScene extends Phaser.Scene {
             strokeThickness: 8
         }).setOrigin(0.5);
 
+        this.add.text(width / 2, 215, 'CHOOSE THE POLICY THAT WILL SHAPE YOUR NEXT DISASTER', {
+            fontSize: '22px', color: '#9bcbd4', fontStyle: 'bold'
+        }).setOrigin(0.5);
+
         this.renderDoctrines(width, height);
     }
 
@@ -39,6 +43,10 @@ export class DoctrineScene extends Phaser.Scene {
                 .setStrokeStyle(6, 0x00ffff)
                 .setInteractive()
                 .on('pointerdown', () => this.selectDoctrine(doctrine));
+
+            this.add.text(90, y - 145, `OPTION ${i + 1}`, {
+                fontSize: '20px', color: '#8aa7b2', fontStyle: 'bold'
+            });
 
             this.add.text(x, y - 100, doctrine.name, {
                 fontSize: '42px',
@@ -61,6 +69,7 @@ export class DoctrineScene extends Phaser.Scene {
 
     private selectDoctrine(doctrine: Doctrine) {
         currentRun.activeDoctrine = doctrine;
+        currentRun.save();
         this.cameras.main.flash(500, 0, 255, 255);
         this.time.delayedCall(500, () => this.scene.start('CombatScene'));
     }
