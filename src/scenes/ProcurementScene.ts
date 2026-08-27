@@ -62,6 +62,7 @@ export class ProcurementScene extends Phaser.Scene {
     private obstacles: Obstacle[] = [];
     private slides: Slide[] = [];
     private slideCooldown = new Map<string, number>();
+    private returnLaneCooldown = new Map<FlipperSide, number>();
     private bumperHits = 0;
     private launchAge = 0;
 
@@ -226,6 +227,7 @@ export class ProcurementScene extends Phaser.Scene {
         this.bumperHits = 0;
         this.launchAge = 0;
         this.slideCooldown.clear();
+        this.returnLaneCooldown.clear();
         this.lastBumperHit.clear();
         this.statusText.setText('HIT BUMPERS TO INFLATE THE REQUIREMENT');
     }
@@ -283,6 +285,7 @@ export class ProcurementScene extends Phaser.Scene {
         this.checkSlides();
         this.checkObstacles();
         this.checkBumpers();
+        this.checkReturnFunnels(width);
         // A pinball should eventually return to the player. This prevents a perfect
         // bumper orbit from farming one contract forever while preserving skillful play.
         if (this.launchAge > 18 || this.bumperHits >= this.maxBumperHitsPerBall) {
@@ -308,6 +311,21 @@ export class ProcurementScene extends Phaser.Scene {
         this.ball.y = height - 170;
         this.ballVelocity.y = -Math.max(520, Math.abs(this.ballVelocity.y) * 0.72);
         this.ballVelocity.x *= 0.92;
+    }
+
+    private checkReturnFunnels(width: number) {
+        if (!this.ball || this.ball.y < 1460 || this.ball.y > this.flipperY + 35 || this.ballVelocity.y <= 0) return;
+
+        const side: FlipperSide | undefined = this.ball.x < width / 2 - 170
+            ? 'left'
+            : this.ball.x > width / 2 + 170 ? 'right' : undefined;
+        if (!side || (this.returnLaneCooldown.get(side) ?? 0) > this.time.now) return;
+
+        // The painted lower aprons feed inward toward the paddle tips.
+        this.returnLaneCooldown.set(side, this.time.now + 500);
+        this.ballVelocity.x = side === 'left' ? 560 : -560;
+        this.ballVelocity.y = 520;
+        this.statusText.setText(`${side.toUpperCase()} RETURN LANE — FEEDING FLIPPER`);
     }
 
     private checkRails(width: number) {
