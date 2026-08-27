@@ -34,11 +34,8 @@ interface Obstacle {
 
 interface Slide {
     name: string;
-    x: number;
-    y: number;
     width: number;
-    height: number;
-    exitY: number;
+    points: Array<{ x: number; y: number }>;
     color: number;
 }
 
@@ -165,18 +162,19 @@ export class ProcurementScene extends Phaser.Scene {
         });
 
         this.slides = [
-            { name: 'LEFT RED SLIDE', x: 145, y: 470, width: 105, height: 470, exitY: 940, color: 0xff3d45 },
-            { name: 'RIGHT RED SLIDE', x: width - 145, y: 470, width: 105, height: 470, exitY: 940, color: 0xff3d45 },
-            { name: 'LEFT RETURN SLIDE', x: 145, y: 1130, width: 105, height: 330, exitY: 1460, color: 0x5de6ff },
-            { name: 'RIGHT RETURN SLIDE', x: width - 145, y: 1130, width: 105, height: 330, exitY: 1460, color: 0x5de6ff }
+            { name: 'LEFT RED SLIDE', width: 88, points: [{ x: 175, y: 470 }, { x: 125, y: 650 }, { x: 140, y: 820 }, { x: 215, y: 940 }], color: 0xff3d45 },
+            { name: 'RIGHT RED SLIDE', width: 88, points: [{ x: width - 175, y: 470 }, { x: width - 125, y: 650 }, { x: width - 140, y: 820 }, { x: width - 215, y: 940 }], color: 0xff3d45 },
+            { name: 'LEFT RETURN SLIDE', width: 82, points: [{ x: 205, y: 1130 }, { x: 150, y: 1300 }, { x: 175, y: 1460 }], color: 0x5de6ff },
+            { name: 'RIGHT RETURN SLIDE', width: 82, points: [{ x: width - 205, y: 1130 }, { x: width - 150, y: 1300 }, { x: width - 175, y: 1460 }], color: 0x5de6ff }
         ];
         this.slides.forEach((slide) => {
             const guide = this.add.graphics();
             guide.lineStyle(3, slide.color, 0.42);
-            guide.strokeRect(slide.x - slide.width / 2, slide.y, slide.width, slide.height);
-            guide.lineBetween(slide.x - 10, slide.y + 25, slide.x - 10, slide.exitY - 25);
-            guide.lineBetween(slide.x + 10, slide.y + 25, slide.x + 10, slide.exitY - 25);
-            this.add.text(slide.x, slide.y + 18, 'SLIDE', {
+            guide.beginPath();
+            guide.moveTo(slide.points[0].x, slide.points[0].y);
+            slide.points.slice(1).forEach((point) => guide.lineTo(point.x, point.y));
+            guide.strokePath();
+            this.add.text(slide.points[0].x, slide.points[0].y + 18, 'SLIDE', {
                 fontSize: '13px', color: slide.color === 0xff3d45 ? '#ffb2b6' : '#b7f5ff', fontStyle: 'bold'
             }).setOrigin(0.5);
         });
@@ -352,15 +350,15 @@ export class ProcurementScene extends Phaser.Scene {
     private checkSlides() {
         if (!this.ball) return;
         for (const slide of this.slides) {
-            const inside = this.ball.x > slide.x - slide.width / 2 && this.ball.x < slide.x + slide.width / 2
-                && this.ball.y > slide.y && this.ball.y < slide.exitY;
+            const centerX = this.slideCenterAtY(slide, this.ball.y);
+            const inside = centerX !== undefined && Math.abs(this.ball.x - centerX) < slide.width / 2;
             if (!inside || (this.slideCooldown.get(slide.name) ?? 0) > this.time.now) continue;
 
             this.slideCooldown.set(slide.name, this.time.now + 650);
-            this.ball.x = slide.x;
+            this.ball.x = centerX;
             this.ballVelocity.set(0, 760);
             this.statusText.setText(`${slide.name} ENGAGED — BALL ROUTED DOWN-LANE`);
-            const pulse = this.add.rectangle(slide.x, slide.y + slide.height / 2, slide.width, 8, slide.color, 0.85);
+            const pulse = this.add.rectangle(centerX, this.ball.y, slide.width, 8, slide.color, 0.85);
             this.tweens.add({
                 targets: pulse,
                 alpha: 0,
@@ -369,6 +367,19 @@ export class ProcurementScene extends Phaser.Scene {
                 onComplete: () => pulse.destroy()
             });
         }
+    }
+
+    private slideCenterAtY(slide: Slide, y: number): number | undefined {
+        for (let i = 0; i < slide.points.length - 1; i++) {
+            const start = slide.points[i];
+            const end = slide.points[i + 1];
+            const minY = Math.min(start.y, end.y);
+            const maxY = Math.max(start.y, end.y);
+            if (y < minY || y > maxY) continue;
+            const progress = (y - start.y) / (end.y - start.y || 1);
+            return Phaser.Math.Linear(start.x, end.x, progress);
+        }
+        return undefined;
     }
 
     private checkBumpers() {
