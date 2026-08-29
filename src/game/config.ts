@@ -37,8 +37,8 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
     [WeaponType.GUN]: { 
         name: WeaponType.GUN, 
         cost: 1500, 
-        range: 400, 
-        reloadTime: 100, 
+        range: 500,
+        reloadTime: 75,
         color: 0xcccccc, 
         radius: 20,
         description: "Cheap, reliable, and uses up the lead stockpiles."
@@ -47,7 +47,7 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
         name: WeaponType.JAMMER, 
         cost: 125000, 
         range: 600, 
-        reloadTime: 4000, 
+        reloadTime: 2800,
         color: 0x00ffff, 
         radius: 350,
         description: "Non-kinetic disruption. High contractor markup for 'software updates'."
@@ -56,7 +56,7 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
         name: WeaponType.INTERCEPTOR, 
         cost: 12500000, 
         range: 2000, 
-        reloadTime: 1500, 
+        reloadTime: 850,
         color: 0xffff00, 
         radius: 250,
         description: "Standard kinetic kill vehicle. A flying mansion."
@@ -65,7 +65,7 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
         name: WeaponType.INTERCEPTOR_BLOCK_II, 
         cost: 32400000, 
         range: 2000, 
-        reloadTime: 6000, 
+        reloadTime: 2800,
         color: 0xffaa00, 
         radius: 550,
         description: "Experimental overmatch capability. Requires 4 new hangars per unit."

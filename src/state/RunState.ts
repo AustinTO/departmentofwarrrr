@@ -73,6 +73,19 @@ export class RunState {
 
     public productionQueue: DeliveryBatch[] = [];
 
+    /** Mansion prices escalate so each new expansion takes another good year of bad decisions. */
+    public reconcileMansions() {
+        let nextCost = this.mansionCost(this.mansionsBuilt);
+        while (this.contractorProfit >= nextCost) {
+            this.mansionsBuilt++;
+            nextCost = this.mansionCost(this.mansionsBuilt);
+        }
+    }
+
+    public mansionCost(index: number = this.mansionsBuilt): number {
+        return Math.round(10_000_000 * Math.pow(1.22, index));
+    }
+
     /** Return the campaign to a clean, playable first-year state. */
     public reset() {
         this.currentFY = 2026;

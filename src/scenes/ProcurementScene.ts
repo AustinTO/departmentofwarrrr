@@ -65,6 +65,8 @@ export class ProcurementScene extends Phaser.Scene {
     private returnLaneCooldown = new Map<FlipperSide, number>();
     private bumperHits = 0;
     private launchAge = 0;
+    private spaceCharging = false;
+    private launchChargeStartedAt = 0;
 
     private readonly flipperY = 1660;
     private readonly flipperLength = 190;
@@ -189,6 +191,9 @@ export class ProcurementScene extends Phaser.Scene {
         this.add.text(width - 173, 1585, 'TAP HIGH / LOW\nTO AIM', {
             fontSize: '14px', color: '#b7eaff', align: 'center', fontStyle: 'bold'
         }).setOrigin(0.5);
+        this.add.text(width / 2, height - 35, 'F / J: FLIPPERS   •   HOLD SPACE: CHARGE LAUNCH', {
+            fontSize: '18px', color: '#d8efff', fontStyle: 'bold'
+        }).setOrigin(0.5);
         launch.on('pointerdown', (pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
             event.stopPropagation();
             this.launchBall(pointer);
@@ -206,16 +211,31 @@ export class ProcurementScene extends Phaser.Scene {
             this.pressFlipper(pointer.x < width / 2 ? 'left' : 'right', width);
         });
         this.input.on('pointerup', () => this.releaseFlippers(width));
-        this.input.keyboard?.on('keydown-LEFT', () => this.pressFlipper('left', width));
-        this.input.keyboard?.on('keydown-RIGHT', () => this.pressFlipper('right', width));
-        this.input.keyboard?.on('keyup-LEFT', () => this.releaseFlipper('left', width));
-        this.input.keyboard?.on('keyup-RIGHT', () => this.releaseFlipper('right', width));
-        this.input.keyboard?.on('keydown-SPACE', () => this.launchBall());
+        this.input.keyboard?.on('keydown-F', () => this.pressFlipper('left', width));
+        this.input.keyboard?.on('keydown-J', () => this.pressFlipper('right', width));
+        this.input.keyboard?.on('keyup-F', () => this.releaseFlipper('left', width));
+        this.input.keyboard?.on('keyup-J', () => this.releaseFlipper('right', width));
+        this.input.keyboard?.on('keydown-SPACE', () => {
+            if (!this.ball && !this.contractAuthorized && !this.spaceCharging) {
+                this.spaceCharging = true;
+                this.launchChargeStartedAt = this.time.now;
+                this.statusText.setText('HOLD SPACE — CHARGE THE LAUNCH');
+            }
+        });
+        this.input.keyboard?.on('keyup-SPACE', () => {
+            if (!this.spaceCharging) return;
+            this.spaceCharging = false;
+            this.launchBall(undefined, this.getLaunchCharge());
+        });
         this.input.keyboard?.on('keydown-ENTER', () => this.authorizeContract());
         this.input.keyboard?.on('keydown-ESC', () => this.scene.start('MansionScene'));
     }
 
-    private launchBall(pointer?: Phaser.Input.Pointer) {
+    private getLaunchCharge() {
+        return Phaser.Math.Clamp((this.time.now - this.launchChargeStartedAt) / 1200, 0, 1);
+    }
+
+    private launchBall(pointer?: Phaser.Input.Pointer, charge = 0.35) {
         if (this.ball || this.contractAuthorized) return;
         const { width } = this.scale;
         this.ball = this.add.circle(width - 173, 1365, 19, 0xf5f1dc).setStrokeStyle(3, 0xffffff);
@@ -223,7 +243,8 @@ export class ProcurementScene extends Phaser.Scene {
         // variance prevents identical launches from repeating the same route.
         const launchY = Phaser.Math.Clamp(pointer?.y ?? 1450, 1340, 1560);
         const playerAim = Phaser.Math.Linear(-760, 200, (launchY - 1340) / 220);
-        this.ballVelocity.set(playerAim + Phaser.Math.Between(-70, 70), -Phaser.Math.Between(1010, 1130));
+        const launchSpeed = Phaser.Math.Linear(950, 1650, charge);
+        this.ballVelocity.set(playerAim * (0.8 + charge * 0.35) + Phaser.Math.Between(-70, 70), -launchSpeed);
         this.bumperHits = 0;
         this.launchAge = 0;
         this.slideCooldown.clear();
@@ -266,6 +287,9 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     update(_time: number, delta: number) {
+        if (this.spaceCharging) {
+            this.statusText.setText(`HOLD SPACE — LAUNCH POWER ${Math.round(this.getLaunchCharge() * 100)}%`);
+        }
         if (!this.ball) return;
         const step = Math.min(delta, 34) / 1000;
         const { width, height } = this.scale;

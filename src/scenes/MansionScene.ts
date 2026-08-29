@@ -26,6 +26,8 @@ export class MansionScene extends Phaser.Scene {
             strokeThickness: 8
         }).setOrigin(0.5);
 
+        currentRun.reconcileMansions();
+        currentRun.save();
         this.renderNeighborhood(width, height);
 
         // HUD
@@ -53,11 +55,10 @@ export class MansionScene extends Phaser.Scene {
         const startY = 350;
         const rowSpacing = 250;
 
-        // Number of mansions is based on profit / $10M per mansion
-        const mansionCount = Math.floor(currentRun.contractorProfit / 10000000);
-        currentRun.mansionsBuilt = mansionCount;
+        const mansionCount = currentRun.mansionsBuilt;
 
-        for (let i = 0; i < 15; i++) {
+        const plotCount = Math.max(15, mansionCount + 1);
+        for (let i = 0; i < plotCount; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
             const x = spacing * (col + 1);
@@ -70,7 +71,7 @@ export class MansionScene extends Phaser.Scene {
                 this.buildMansion(x, y);
             } else if (i === mansionCount) {
                 // Construction zone for next mansion
-                this.add.text(x, y, 'UNDER\nCONSTRUCTION', { fontSize: '24px', color: '#ffff00', align: 'center' }).setOrigin(0.5);
+                this.add.text(x, y, `NEXT\n$${(currentRun.mansionCost() / 1e6).toFixed(1)}M`, { fontSize: '24px', color: '#ffff00', align: 'center' }).setOrigin(0.5);
             }
         }
     }

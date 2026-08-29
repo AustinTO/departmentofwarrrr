@@ -9,13 +9,16 @@ export interface WaveStep {
 export class WaveDirector {
     private elapsedTime: number = 0;
     private intensity: number = 1;
+    private lastTime: number | null = null;
 
     constructor(fy: number = 1) {
         this.intensity = 1 + (fy - 1) * 0.5;
     }
 
     public getNextSpawn(time: number): { type: ThreatType, delay: number } {
-        this.elapsedTime += time;
+        const delta = this.lastTime === null ? 0 : Math.max(0, time - this.lastTime);
+        this.lastTime = time;
+        this.elapsedTime += delta;
         
         // Intensity increases over the course of the wave (60-100 seconds)
         const waveProgress = Math.min(1, this.elapsedTime / 90000);

@@ -23,6 +23,18 @@ describe('RunState inventory transfers', () => {
 });
 
 describe('RunState campaign lifecycle', () => {
+    it('builds mansions one at a time with an escalating threshold', () => {
+        const run = new RunState();
+        run.contractorProfit = 10_000_000;
+        run.reconcileMansions();
+        expect(run.mansionsBuilt).toBe(1);
+        expect(run.mansionCost()).toBeGreaterThan(10_000_000);
+
+        run.contractorProfit = run.mansionCost();
+        run.reconcileMansions();
+        expect(run.mansionsBuilt).toBe(2);
+    });
+
     it('persists the selected doctrine and restores it on load', () => {
         const run = new RunState();
         run.activeDoctrine = {

@@ -5,6 +5,7 @@ import { CombatSystem } from '../game/CombatSystem';
 import { WaveDirector } from '../game/WaveDirector';
 import { audioManager } from '../managers/AudioManager';
 import { currentRun } from '../state/RunState';
+import { getArcControlPoint, quadraticBezier } from '../game/Trajectory';
 
 export class CombatScene extends Phaser.Scene {
     private playerBase!: Phaser.GameObjects.Rectangle;
@@ -22,6 +23,9 @@ export class CombatScene extends Phaser.Scene {
     private timeText!: Phaser.GameObjects.Text;
     private isShaking: boolean = false;
     private isFinishingWave: boolean = false;
+    private interceptorShots = new Set<Phaser.GameObjects.Container>();
+    private combo = 0;
+    private comboExpiresAt = 0;
 
     private hudTexts!: { 
         burn: Phaser.GameObjects.Text; 
@@ -30,6 +34,7 @@ export class CombatScene extends Phaser.Scene {
         weapon: Phaser.GameObjects.Text;
         pressure: Phaser.GameObjects.Text;
         ammo: Phaser.GameObjects.Text;
+        combo: Phaser.GameObjects.Text;
     };
 
     constructor() {
@@ -41,6 +46,10 @@ export class CombatScene extends Phaser.Scene {
         this.combatSystem.reset();
         this.remainingTime = 60;
         this.isFinishingWave = false;
+        this.combo = 0;
+        this.comboExpiresAt = 0;
+        this.interceptorShots.clear();
+        this.waveDirector = new WaveDirector(Math.max(1, currentRun.currentFY - 2025));
 
         // Background
         this.add.image(width / 2, height / 2, 'combat_bg').setDisplaySize(width, height);
@@ -197,6 +206,15 @@ export class CombatScene extends Phaser.Scene {
         if (isMystery) container.setAlpha(0.3);
 
         container.setData('config', config);
+        const weaving = config.type === ThreatType.SCOOTER || config.type === ThreatType.MYSTERY || config.type === ThreatType.SWARM;
+        if (weaving) {
+            container.setData('motion', {
+                originX: posX,
+                phase: Phaser.Math.FloatBetween(0, Math.PI * 2),
+                amplitude: config.type === ThreatType.SCOOTER ? 90 : 45,
+                frequency: config.type === ThreatType.SCOOTER ? 0.004 : 0.0025
+            });
+        }
         this.physics.add.existing(container);
         this.threats.add(container);
         
@@ -230,7 +248,8 @@ export class CombatScene extends Phaser.Scene {
             readiness: this.add.text(width - 40, 40, `READINESS: ${currentRun.globalReadiness}%`, style).setOrigin(1, 0),
             weapon: this.add.text(width / 2, 160, `WEAPON: ${this.currentWeapon}`, style).setOrigin(0.5, 0),
             pressure: this.add.text(width - 40, 100, 'PRESSURE: 0', style).setOrigin(1, 0),
-            ammo: this.add.text(width / 2, 220, 'AMMO: UNLIMITED', style).setOrigin(0.5, 0)
+            ammo: this.add.text(width / 2, 220, 'AMMO: UNLIMITED', style).setOrigin(0.5, 0),
+            combo: this.add.text(width / 2, 285, 'CHAIN READY', { ...style, color: '#ffd166' }).setOrigin(0.5, 0)
         };
     }
 
@@ -313,19 +332,22 @@ export class CombatScene extends Phaser.Scene {
 
         this.physics.add.existing(container);
         
-        const speed = 900;
-        this.physics.moveTo(container, targetX, targetY, speed);
-
-        // Rotate container to face target
-        const angle = Phaser.Math.Angle.Between(startX, startY, targetX, targetY);
-        container.setRotation(angle + Math.PI / 2);
-
+        // Keep Arcade Physics for the projectile body, but steer its position along
+        // a curved, fast flight path so every launch has a little personality.
+        const speed = isBlockII ? 2100 : 1800;
         const distance = Phaser.Math.Distance.Between(startX, startY, targetX, targetY);
-        const duration = (distance / speed) * 1000;
-
-        this.time.delayedCall(duration, () => {
-            this.detonate(container, targetX, targetY, config.radius, config.name);
+        const duration = Math.max(120, (distance / speed) * 1000);
+        const arc = Phaser.Math.Clamp((targetX - startX) * 0.22, -180, 180);
+        container.setData('trajectory', {
+            start: { x: startX, y: startY },
+            control: getArcControlPoint({ x: startX, y: startY }, { x: targetX, y: targetY }, arc),
+            target: { x: targetX, y: targetY },
+            elapsed: 0,
+            duration,
+            radius: config.radius,
+            weaponName: config.name
         });
+        this.interceptorShots.add(container);
     }
 
 
@@ -433,6 +455,9 @@ export class CombatScene extends Phaser.Scene {
         audioManager.play('threat_explode');
         const threatConfig = threat.getData('config') as ThreatConfig;
         const ratio = this.combatSystem.recordThreatDestroyed(threatConfig.type, weapon);
+
+        this.combo = this.time.now <= this.comboExpiresAt ? this.combo + 1 : 1;
+        this.comboExpiresAt = this.time.now + 2200;
 
         if (weapon === WeaponType.INTERCEPTOR || weapon === WeaponType.INTERCEPTOR_BLOCK_II) {
             this.showOvermatchPopup(threat.x, threat.y, ratio, weapon);
@@ -558,6 +583,8 @@ export class CombatScene extends Phaser.Scene {
         
         const pressure = Math.floor(stats.procurementPressure);
         this.hudTexts.pressure.setText(`PRESSURE: ${pressure}`);
+        this.hudTexts.combo.setText(this.combo > 1 ? `CHAIN x${this.combo}  •  KEEP FIRING` : 'CHAIN READY');
+        this.hudTexts.combo.setColor(this.combo > 1 ? '#ffdf6b' : '#ffd166');
         
         // Pressure warning effect
         if (pressure > 100) {
@@ -609,7 +636,37 @@ export class CombatScene extends Phaser.Scene {
     }
 
     update() {
+        if (this.currentWeapon === WeaponType.GUN) this.autoFireVulcan();
+        const delta = this.game.loop.delta;
+        this.interceptorShots.forEach((shot) => {
+            if (!shot.active) {
+                this.interceptorShots.delete(shot);
+                return;
+            }
+            const trajectory = shot.getData('trajectory') as {
+                start: { x: number; y: number };
+                control: { x: number; y: number };
+                target: { x: number; y: number };
+                elapsed: number;
+                duration: number;
+                radius: number;
+                weaponName: string;
+            };
+            trajectory.elapsed += delta;
+            const progress = trajectory.elapsed / trajectory.duration;
+            const position = quadraticBezier(trajectory.start, trajectory.control, trajectory.target, progress);
+            shot.setPosition(position.x, position.y);
+            const next = quadraticBezier(trajectory.start, trajectory.control, trajectory.target, Math.min(1, progress + 0.02));
+            shot.setRotation(Phaser.Math.Angle.Between(position.x, position.y, next.x, next.y) + Math.PI / 2);
+            if (progress >= 1) {
+                this.interceptorShots.delete(shot);
+                this.detonate(shot, trajectory.target.x, trajectory.target.y, trajectory.radius, trajectory.weaponName);
+            }
+        });
+
         this.threats.getChildren().forEach((threat: any) => {
+            const motion = threat.getData('motion') as { originX: number; phase: number; amplitude: number; frequency: number } | undefined;
+            if (motion) threat.x = motion.originX + Math.sin(this.time.now * motion.frequency + motion.phase) * motion.amplitude;
             if (threat.y > this.scale.height) {
                 audioManager.play('base_hit');
                 threat.destroy();
@@ -621,6 +678,22 @@ export class CombatScene extends Phaser.Scene {
                 if (currentRun.globalReadiness === 0) this.gameOver();
             }
         });
+    }
+
+    private autoFireVulcan() {
+        const config = WEAPON_CONFIGS[WeaponType.GUN];
+        if (this.time.now - this.lastFired < config.reloadTime) return;
+        const candidates = this.threats.getChildren()
+            .filter((threat: Phaser.GameObjects.GameObject) => threat.active)
+            .map((threat: Phaser.GameObjects.GameObject) => threat as Phaser.GameObjects.Container)
+            .filter((threat) => Phaser.Math.Distance.Between(this.playerBase.x, this.playerBase.y, threat.x, threat.y) <= config.range);
+        const target = candidates.sort((a, b) => a.y - b.y)[0];
+        if (!target) return;
+
+        this.lastFired = this.time.now;
+        this.combatSystem.recordWeaponFire(WeaponType.GUN);
+        this.fireGun(target.x, target.y, config);
+        this.updateHUD();
     }
 
     private gameOver() {
