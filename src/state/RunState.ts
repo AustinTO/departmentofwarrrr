@@ -83,7 +83,9 @@ export class RunState {
     }
 
     public mansionCost(index: number = this.mansionsBuilt): number {
-        return Math.round(10_000_000 * Math.pow(1.22, index));
+        // Mansions are a late-game visual score. Procurement money moves in
+        // billions, so a single suburban house must not exhaust the map.
+        return Math.round(8_000_000_000 * Math.pow(1.28, index));
     }
 
     /** Return the campaign to a clean, playable first-year state. */

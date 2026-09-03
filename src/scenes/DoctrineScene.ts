@@ -70,7 +70,11 @@ export class DoctrineScene extends Phaser.Scene {
     private selectDoctrine(doctrine: Doctrine) {
         currentRun.activeDoctrine = doctrine;
         currentRun.save();
+        // Prevent a second tap from queuing multiple scene transitions. Keep
+        // the transition synchronous: a native WebView may be paused between
+        // frames, which can strand a delayed call before CombatScene starts.
+        this.input.enabled = false;
         this.cameras.main.flash(500, 0, 255, 255);
-        this.time.delayedCall(500, () => this.scene.start('CombatScene'));
+        this.scene.start('CombatScene');
     }
 }

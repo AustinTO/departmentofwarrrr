@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { currentRun } from '../state/RunState';
 import type { DeliveryBatch } from '../state/RunState';
 import { WeaponType } from '../game/config';
+import { CHARACTERS, characterLine } from '../game/Characters';
 
 type FlipperSide = 'left' | 'right';
 
@@ -15,6 +16,7 @@ interface Bumper {
     color: number;
     weapon: WeaponType;
     quantity: number;
+    outcome: 'inflate' | 'efficiency';
 }
 
 interface Rail {
@@ -41,7 +43,7 @@ interface Slide {
 
 /** A deterministic touch-first pinball minigame that avoids a second physics plugin. */
 export class ProcurementScene extends Phaser.Scene {
-    private ball?: Phaser.GameObjects.Arc;
+    private ball?: Phaser.GameObjects.Image;
     private ballVelocity = new Phaser.Math.Vector2();
     private procurementList: Partial<Record<WeaponType, number>> = {};
     private leadTimeDelay = 0;
@@ -53,8 +55,8 @@ export class ProcurementScene extends Phaser.Scene {
     private authorizeButton!: Phaser.GameObjects.Rectangle;
     private bumpers: Bumper[] = [];
     private lastBumperHit = new Map<string, number>();
-    private leftFlipper!: Phaser.GameObjects.Rectangle;
-    private rightFlipper!: Phaser.GameObjects.Rectangle;
+    private leftFlipper!: Phaser.GameObjects.Image;
+    private rightFlipper!: Phaser.GameObjects.Image;
     private leftPressed = false;
     private rightPressed = false;
     private contractAuthorized = false;
@@ -67,6 +69,12 @@ export class ProcurementScene extends Phaser.Scene {
     private launchAge = 0;
     private spaceCharging = false;
     private launchChargeStartedAt = 0;
+    private combo = 0;
+    private comboExpiresAt = 0;
+    private comboText!: Phaser.GameObjects.Text;
+    private adviserPortrait!: Phaser.GameObjects.Image;
+    private adviserName!: Phaser.GameObjects.Text;
+    private adviserLine!: Phaser.GameObjects.Text;
 
     private readonly flipperY = 1660;
     private readonly flipperLength = 190;
@@ -79,43 +87,76 @@ export class ProcurementScene extends Phaser.Scene {
 
     create() {
         const { width, height } = this.scale;
-        this.add.image(width / 2, height / 2, 'procurement_bg').setDisplaySize(width, height);
-        this.add.rectangle(0, 0, width, 360, 0x02070d, 0.78).setOrigin(0);
+        this.createBoardShell(width, height);
+        this.add.rectangle(0, 0, width, 430, 0x02070d, 0.72).setOrigin(0);
         this.createHud(width);
         this.createBumpers(width);
         this.createRails(width);
         this.createFlippers(width);
         this.createControls(width, height);
+        this.showAdviser('peter', 'procurement');
+    }
+
+    /** The table is layered in Phaser so art, input, and collision guides stay aligned. */
+    private createBoardShell(width: number, height: number) {
+        this.add.rectangle(width / 2, height / 2, width, height, 0x07121e);
+        this.add.rectangle(width / 2, height / 2 + 130, width - 54, height - 160, 0x102f3e)
+            .setStrokeStyle(8, 0x5de6ff, 0.8);
+        this.add.rectangle(width / 2, height / 2 + 130, width - 88, height - 194, 0x071b28)
+            .setStrokeStyle(3, 0x254f63, 0.9);
+
+        const lines = this.add.graphics();
+        lines.lineStyle(2, 0x2e7188, 0.45);
+        for (let y = 470; y < height - 220; y += 150) lines.lineBetween(80, y, width - 80, y);
+        lines.lineStyle(4, 0xff3d45, 0.7);
+        lines.lineBetween(118, 460, 118, 1515);
+        lines.lineBetween(width - 118, 460, width - 118, 1515);
+        lines.lineStyle(4, 0x5de6ff, 0.75);
+        lines.lineBetween(185, 1140, 185, 1510);
+        lines.lineBetween(width - 185, 1140, width - 185, 1510);
+
+        this.add.text(width / 2, 455, 'APPROPRIATIONS TABLE • KEEP THE REQUIREMENT IN PLAY', {
+            fontSize: '16px', color: '#6fcbe7', fontStyle: 'bold'
+        }).setOrigin(0.5);
     }
 
     private createHud(width: number) {
         this.add.text(width / 2, 42, 'PROCUREMENT PINBALL', {
             fontSize: '46px', color: '#f3ca67', fontStyle: 'bold', stroke: '#000000', strokeThickness: 7
         }).setOrigin(0.5);
-        this.profitText = this.add.text(46, 95, '', { fontSize: '28px', color: '#9fffa6' });
-        this.valueText = this.add.text(46, 143, '', { fontSize: '27px', color: '#ffffff', wordWrap: { width: width - 92 } });
-        this.delayText = this.add.text(46, 235, '', { fontSize: '27px', color: '#ffd47c' });
-        this.statusText = this.add.text(width / 2, 305, 'LAUNCH A REQUIREMENT TO START A CONTRACT', {
+        this.profitText = this.add.text(42, 95, '', { fontSize: '24px', color: '#9fffa6', wordWrap: { width: 310 } });
+        this.valueText = this.add.text(42, 138, '', { fontSize: '22px', color: '#ffffff', wordWrap: { width: 310 } });
+        this.delayText = this.add.text(width - 42, 95, '', { fontSize: '22px', color: '#ffd47c', align: 'right', wordWrap: { width: 310 } }).setOrigin(1, 0);
+        this.statusText = this.add.text(width / 2, 405, 'LAUNCH A REQUIREMENT TO START A CONTRACT', {
             fontSize: '20px', color: '#a7dfff', fontStyle: 'bold', align: 'center'
         }).setOrigin(0.5);
+        this.comboText = this.add.text(width - 42, 178, 'INFLATION COMBO x1', {
+            fontSize: '22px', color: '#ffd47c', fontStyle: 'bold'
+        }).setOrigin(1, 0);
+
+        // The secretary sits in the centered chairman's chair above the board.
+        this.add.rectangle(width / 2, 284, 160, 154, 0x321d16, 0.96).setStrokeStyle(6, 0xb98745);
+        this.add.rectangle(width / 2, 357, 210, 28, 0x1d1110, 0.98).setStrokeStyle(3, 0xb98745);
+        this.adviserPortrait = this.add.image(width / 2, 348, CHARACTERS.peter.portraitKey).setDisplaySize(122, 154).setOrigin(0.5, 1);
+        this.adviserName = this.add.text(width / 2, 366, '', { fontSize: '17px', fontStyle: 'bold', color: '#f3ca67', align: 'center' }).setOrigin(0.5);
+        this.adviserLine = this.add.text(width / 2, 385, '', { fontSize: '15px', color: '#eaf6ff', align: 'center', wordWrap: { width: 560 }, lineSpacing: 2 }).setOrigin(0.5, 0);
         this.updateHUD();
     }
 
     private createBumpers(width: number) {
         this.bumpers = [
-            { x: width / 2, y: 650, radius: 72, label: 'JACKPOT', value: 100_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20 },
-            { x: 210, y: 1000, radius: 46, label: 'AUDIT FAILED', value: 50_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50 },
-            { x: width - 210, y: 1000, radius: 46, label: 'COST OVERRUN', value: 25_000_000, delay: 0.2, color: 0xff5544, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 5 },
-            { x: width / 2, y: 1490, radius: 44, label: 'URGENT NEED', value: 10_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10 },
-            { x: 310, y: 760, radius: 30, label: 'TARGET ACQUIRED', value: 3_000_000, delay: 0.1, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 40 },
-            { x: width - 310, y: 760, radius: 30, label: 'TARGET ACQUIRED', value: 3_000_000, delay: 0.1, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 40 },
-            { x: 290, y: 1280, radius: 28, label: 'RISK PREMIUM', value: 5_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2 },
-            { x: width - 290, y: 1280, radius: 28, label: 'RISK PREMIUM', value: 5_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2 }
+            { x: width / 2, y: 650, radius: 72, label: 'JACKPOT', value: 100_000_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20, outcome: 'inflate' },
+            { x: 210, y: 1000, radius: 46, label: 'AUDIT FAILED', value: 50_000_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50, outcome: 'inflate' },
+            { x: width - 210, y: 1000, radius: 46, label: 'COST OVERRUN', value: 25_000_000_000, delay: 0.2, color: 0xff5544, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 5, outcome: 'inflate' },
+            { x: width / 2, y: 1490, radius: 44, label: 'URGENT NEED', value: 10_000_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10, outcome: 'inflate' },
+            { x: 310, y: 760, radius: 30, label: 'ACTUAL REQUIREMENTS', value: -2_000_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency' },
+            { x: width - 310, y: 760, radius: 30, label: 'FIXED PRICE', value: -2_000_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency' },
+            { x: 290, y: 1280, radius: 28, label: 'RISK PREMIUM', value: 5_000_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2, outcome: 'inflate' },
+            { x: width - 290, y: 1280, radius: 28, label: 'COMPETITIVE BID', value: -1_000_000_000, delay: -0.1, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 0, outcome: 'efficiency' }
         ];
 
         this.bumpers.forEach((bumper) => {
-            this.add.circle(bumper.x, bumper.y, bumper.radius, bumper.color, 0.22).setStrokeStyle(4, bumper.color, 0.95);
-            this.add.circle(bumper.x, bumper.y, Math.max(8, bumper.radius - 13), bumper.color, 0.12).setStrokeStyle(2, 0xffffff, 0.38);
+            this.add.image(bumper.x, bumper.y, 'pinball_bumper').setDisplaySize(bumper.radius * 2, bumper.radius * 2).setTint(bumper.color);
             this.add.text(bumper.x, bumper.y, bumper.label, {
                 fontSize: bumper.radius > 60 ? '22px' : '14px', color: '#fff4c9', fontStyle: 'bold', align: 'center', stroke: '#000000', strokeThickness: 3
             }).setOrigin(0.5);
@@ -128,10 +169,14 @@ export class ProcurementScene extends Phaser.Scene {
 
     private createFlippers(width: number) {
         // The source artwork hinges on the outside ends, not at the rectangle centers.
-        this.leftFlipper = this.add.rectangle(270, this.flipperY, this.flipperLength, 38, 0xf5ead5, 0.88)
-            .setOrigin(0, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(18);
-        this.rightFlipper = this.add.rectangle(width - 270, this.flipperY, this.flipperLength, 38, 0xf5ead5, 0.88)
-            .setOrigin(1, 0.5).setStrokeStyle(3, 0x8c5f2e).setAngle(-18);
+        this.leftFlipper = this.add.image(270, this.flipperY, 'flipper_left').setDisplaySize(220, 61)
+            .setOrigin(0.09, 0.5).setAngle(18);
+        this.rightFlipper = this.add.image(width - 270, this.flipperY, 'flipper_right').setDisplaySize(220, 61)
+            .setOrigin(0.91, 0.5).setAngle(-18);
+        this.add.image(150, this.flipperY - 105, 'pinball_sling').setDisplaySize(112, 86);
+        this.add.image(width - 150, this.flipperY - 105, 'pinball_sling').setDisplaySize(112, 86).setFlipX(true);
+        this.add.text(220, this.flipperY + 88, 'LEFT FLIPPER\nTAP / HOLD', { fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+        this.add.text(width - 220, this.flipperY + 88, 'RIGHT FLIPPER\nTAP / HOLD', { fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
     }
 
     private createRails(width: number) {
@@ -157,8 +202,7 @@ export class ProcurementScene extends Phaser.Scene {
         ];
 
         this.obstacles.forEach((obstacle) => {
-            this.add.triangle(obstacle.x, obstacle.y, 0, obstacle.radius, obstacle.radius, -obstacle.radius, -obstacle.radius, -obstacle.radius, obstacle.color, 0.35)
-                .setStrokeStyle(3, obstacle.color, 0.9);
+            this.add.image(obstacle.x, obstacle.y, 'pinball_target').setDisplaySize(obstacle.radius * 2.4, obstacle.radius * 2.4).setTint(obstacle.color);
             this.add.text(obstacle.x, obstacle.y + obstacle.radius + 5, '◆', {
                 fontSize: '12px', color: '#eaffed'
             }).setOrigin(0.5);
@@ -184,14 +228,14 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     private createControls(width: number, height: number) {
-        const launch = this.add.rectangle(width - 173, 1450, 118, 220, 0x78cfff, 0.26).setStrokeStyle(4, 0x9edcff, 0.95).setInteractive({ useHandCursor: true });
+        const launch = this.add.image(width - 173, 1450, 'pinball_plunger').setDisplaySize(118, 220).setInteractive({ useHandCursor: true });
         this.add.text(width - 173, 1450, 'LAUNCH\nREQ', {
             fontSize: '21px', color: '#d8efff', align: 'center', fontStyle: 'bold', stroke: '#00111f', strokeThickness: 3
         }).setOrigin(0.5);
         this.add.text(width - 173, 1585, 'TAP HIGH / LOW\nTO AIM', {
             fontSize: '14px', color: '#b7eaff', align: 'center', fontStyle: 'bold'
         }).setOrigin(0.5);
-        this.add.text(width / 2, height - 35, 'F / J: FLIPPERS   •   HOLD SPACE: CHARGE LAUNCH', {
+        this.add.text(width / 2, height - 35, 'TAP LEFT / RIGHT TO FLIP   •   HOLD SPACE: CHARGE LAUNCH', {
             fontSize: '18px', color: '#d8efff', fontStyle: 'bold'
         }).setOrigin(0.5);
         launch.on('pointerdown', (pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
@@ -202,6 +246,10 @@ export class ProcurementScene extends Phaser.Scene {
         this.authorizeButton = this.add.rectangle(width / 2, height - 112, 430, 84, 0x087a42, 0.92).setStrokeStyle(3, 0xa8ff93).setInteractive({ useHandCursor: true });
         this.add.text(width / 2, height - 112, 'AUTHORIZE CONTRACT', { fontSize: '32px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
         this.authorizeButton.on('pointerdown', () => this.authorizeContract());
+
+        // The trough belongs behind the paddles: balls pass the flippers before
+        // they drain, and the visible drain never covers the active sprites.
+        this.add.image(width / 2, this.flipperY + 48, 'pinball_drain').setDisplaySize(310, 76).setDepth(-1);
 
         this.add.text(116, height - 48, 'EXIT TO MCLEAN', { fontSize: '18px', color: '#d3dce4', fontStyle: 'bold' }).setOrigin(0.5)
             .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.scene.start('MansionScene'));
@@ -238,7 +286,7 @@ export class ProcurementScene extends Phaser.Scene {
     private launchBall(pointer?: Phaser.Input.Pointer, charge = 0.35) {
         if (this.ball || this.contractAuthorized) return;
         const { width } = this.scale;
-        this.ball = this.add.circle(width - 173, 1365, 19, 0xf5f1dc).setStrokeStyle(3, 0xffffff);
+        this.ball = this.add.image(width - 173, 1365, 'pinball_ball').setDisplaySize(this.ballRadius * 2, this.ballRadius * 2);
         // Tapping higher/lower on the launch lane changes the aim. A small bounded
         // variance prevents identical launches from repeating the same route.
         const launchY = Phaser.Math.Clamp(pointer?.y ?? 1450, 1340, 1560);
@@ -280,13 +328,17 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     private kickBall(side: FlipperSide, width: number) {
-        if (!this.ball || this.ball.y < this.flipperY - 180 || this.ball.y > this.flipperY + 110) return;
+        if (!this.ball || this.ball.y < this.flipperY - 115 || this.ball.y > this.flipperY + 85) return;
         const pivotX = side === 'left' ? 270 : width - 270;
-        if (Math.abs(this.ball.x - pivotX) > this.flipperLength + 30) return;
-        this.ballVelocity.set(side === 'left' ? 620 : -620, -1120);
+        if (Math.abs(this.ball.x - pivotX) > this.flipperLength + 45) return;
+        this.ballVelocity.set(side === 'left' ? 760 : -760, -1320);
     }
 
     update(_time: number, delta: number) {
+        if (this.combo > 0 && this.time.now > this.comboExpiresAt) {
+            this.combo = 0;
+            this.comboText.setText('INFLATION COMBO x1');
+        }
         if (this.spaceCharging) {
             this.statusText.setText(`HOLD SPACE — LAUNCH POWER ${Math.round(this.getLaunchCharge() * 100)}%`);
         }
@@ -378,12 +430,20 @@ export class ProcurementScene extends Phaser.Scene {
             { side: 'right' as FlipperSide, pivotX: width - 270, angle: this.rightFlipper.rotation }
         ];
         for (const flipper of flippers) {
-            const endX = flipper.pivotX + Math.cos(flipper.angle) * (flipper.side === 'left' ? this.flipperLength : -this.flipperLength);
-            const endY = this.flipperY + Math.sin(flipper.angle) * (flipper.side === 'left' ? this.flipperLength : -this.flipperLength);
-            const distance = Math.hypot(this.ball.x - endX, this.ball.y - endY);
-            if (distance > this.ballRadius + 28 || this.ball.y < this.flipperY - 65 || this.ball.y > this.flipperY + 55) continue;
-            this.ball.y = this.flipperY - this.ballRadius - 12;
-            this.ballVelocity.set(flipper.side === 'left' ? 620 : -620, -1120);
+            const direction = flipper.side === 'left' ? 1 : -1;
+            const endX = flipper.pivotX + Math.cos(flipper.angle) * this.flipperLength * direction;
+            const endY = this.flipperY + Math.sin(flipper.angle) * this.flipperLength * direction;
+            const dx = endX - flipper.pivotX;
+            const dy = endY - this.flipperY;
+            const lengthSq = dx * dx + dy * dy;
+            const t = Phaser.Math.Clamp(((this.ball.x - flipper.pivotX) * dx + (this.ball.y - this.flipperY) * dy) / lengthSq, 0, 1);
+            const closestX = flipper.pivotX + dx * t;
+            const closestY = this.flipperY + dy * t;
+            if (Phaser.Math.Distance.Between(this.ball.x, this.ball.y, closestX, closestY) > this.ballRadius + 23) continue;
+            this.ball.x = closestX;
+            this.ball.y = closestY - this.ballRadius - 8;
+            const power = flipper.side === 'left' ? 820 : -820;
+            this.ballVelocity.set(power + (t - 0.5) * 300, -900 - t * 520);
         }
     }
 
@@ -464,20 +524,44 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     private showBumperHit(bumper: Bumper) {
-        const flash = this.add.text(bumper.x, bumper.y - bumper.radius - 22, `+$${(bumper.value / 1e6).toFixed(0)}M`, {
-            fontSize: '30px', color: '#9dff8e', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4
+        const multiplier = bumper.outcome === 'inflate' ? Math.min(4, 1 + Math.floor(this.combo / 3)) : 1;
+        const flash = this.add.text(bumper.x, bumper.y - bumper.radius - 22, `${bumper.value >= 0 ? '+' : '-'}${this.formatBudget(Math.abs(bumper.value) * multiplier)}${multiplier > 1 ? `  x${multiplier}` : ''}`, {
+            fontSize: '30px', color: bumper.outcome === 'inflate' ? '#9dff8e' : '#ff9b9b', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4
         }).setOrigin(0.5);
         this.tweens.add({ targets: flash, y: flash.y - 65, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
+        const pulse = this.add.circle(bumper.x, bumper.y, bumper.radius, bumper.color, 0.35).setStrokeStyle(5, 0xffffff, 0.9);
+        this.tweens.add({ targets: pulse, scale: 1.55, alpha: 0, duration: 360, onComplete: () => pulse.destroy() });
+        this.combo = bumper.outcome === 'inflate' ? this.combo + 1 : 0;
+        this.comboExpiresAt = this.time.now + 2200;
+        this.comboText.setText(this.combo > 0 ? `INFLATION COMBO x${Math.min(4, 1 + Math.floor(this.combo / 3))}` : 'EFFICIENCY INCIDENT');
+        const adviser = bumper.label === 'AUDIT FAILED'
+            ? 'audit'
+            : bumper.label === 'TARGET ACQUIRED'
+                ? 'addington'
+                : bumper.label === 'JACKPOT' || bumper.label === 'COST OVERRUN'
+                    ? 'margin'
+                    : 'ledger';
+        this.showAdviser(adviser, 'procurement');
     }
 
     private addToProcurement(weapon: WeaponType, quantity: number, delay: number, value: number) {
-        this.procurementList[weapon] = (this.procurementList[weapon] ?? 0) + quantity;
+        const multiplier = value > 0 ? Math.min(4, 1 + Math.floor(this.combo / 3)) : 1;
+        if (quantity > 0) this.procurementList[weapon] = (this.procurementList[weapon] ?? 0) + quantity;
         this.leadTimeDelay += delay;
-        this.score += value;
-        currentRun.taxpayerBurn += value;
-        currentRun.contractorProfit += value * 0.15;
-        this.statusText.setText('EMERGENCY REQUIREMENT EXPANDED — KEEP HITTING BUMPERS');
+        this.score = Math.max(0, this.score + value * multiplier);
+        currentRun.taxpayerBurn = Math.max(0, currentRun.taxpayerBurn + value * multiplier);
+        currentRun.contractorProfit = Math.max(0, currentRun.contractorProfit + value * multiplier * 0.15);
+        this.statusText.setText(value > 0 ? 'EMERGENCY REQUIREMENT EXPANDED — KEEP HITTING BUMPERS' : 'EFFICIENCY DETECTED — CONTRACT SHRINKING');
         this.updateHUD();
+    }
+
+    private showAdviser(characterId: keyof typeof CHARACTERS, scene: 'procurement') {
+        const adviser = CHARACTERS[characterId];
+        this.adviserPortrait.setTexture(adviser.portraitKey);
+        this.adviserName.setText(`${adviser.name} — ${adviser.title}`).setColor(adviser.color);
+        this.adviserLine.setText(`“${characterLine(characterId, scene)}”`);
+        this.adviserPortrait.setAlpha(0.55);
+        this.tweens.add({ targets: this.adviserPortrait, alpha: 1, duration: 180 });
     }
 
     private drainBall() {
@@ -490,9 +574,13 @@ export class ProcurementScene extends Phaser.Scene {
     private updateHUD() {
         const items = Object.entries(this.procurementList).map(([weapon, quantity]) => `${weapon}: ${quantity}`).join('  •  ') || 'NO CONTRACT ITEMS YET';
         this.valueText.setText(`CONTRACT: ${items}`);
-        this.delayText.setText(`VALUE: $${this.score.toLocaleString()}  •  DELIVERY DELAY: +${this.leadTimeDelay.toFixed(1)} YEARS`);
-        this.profitText.setText(`CONTRACTOR PROFIT: $${currentRun.contractorProfit.toLocaleString()}`);
+        this.delayText.setText(`VALUE: ${this.formatBudget(this.score)}  •  DELIVERY DELAY: +${this.leadTimeDelay.toFixed(1)} YEARS`);
+        this.profitText.setText(`CONTRACTOR PROFIT: ${this.formatBudget(currentRun.contractorProfit)}`);
         this.authorizeButton?.setFillStyle(this.score > 0 ? 0x087a42 : 0x3c4a55, this.score > 0 ? 0.92 : 0.6);
+    }
+
+    private formatBudget(value: number) {
+        return value >= 1e12 ? `$${(value / 1e12).toFixed(2)}T` : `$${(value / 1e9).toFixed(1)}B`;
     }
 
     private authorizeContract() {
