@@ -33,7 +33,11 @@ const config: Phaser.Types.Core.GameConfig = {
             debug: false
         }
     },
-    scene: window.location.hash === '#planck-lab' ? [PinballPhysicsLab] : [BootScene, PreloaderScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene]
+    scene: window.location.hash === '#planck-lab'
+        ? [PinballPhysicsLab]
+        : window.location.hash === '#procurement'
+            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene]
+            : [BootScene, PreloaderScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab]
 };
 
 const game = new Phaser.Game(config);

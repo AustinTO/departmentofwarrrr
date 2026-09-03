@@ -24,7 +24,7 @@ export class PreloaderScene extends Phaser.Scene {
         });
 
         this.load.on('complete', () => {
-            this.scene.start('DoctrineScene');
+            this.scene.start(window.location.hash === '#procurement' ? 'ProcurementScene' : 'DoctrineScene');
         });
         
         this.load.on('loaderror', (file: Phaser.Loader.File) => {

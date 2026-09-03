@@ -35,7 +35,9 @@ export class PinballPhysicsLab extends Phaser.Scene {
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
             if (pointer.y < 160 && pointer.x < 220) { this.debugEnabled = !this.debugEnabled; return; }
             if (pointer.y < 160 && pointer.x > width - 260) { this.spawnMultiball(); return; }
-            if (pointer.y > height - 190) this.setFlipper(pointer.x < width / 2 ? 'left' : 'right', true);
+            // The visible flippers live in the lower 380px of the logical table.
+            // Keep the touch zones broad so mobile players can hit them directly.
+            if (pointer.y > height - 420) this.setFlipper(pointer.x < width / 2 ? 'left' : 'right', true);
             else if (pointer.y > height - 500 && pointer.x > width * 0.35 && pointer.x < width * 0.65) this.spawnBall();
         });
         this.input.on('pointerup', () => { this.setFlipper('left', false); this.setFlipper('right', false); });
@@ -53,6 +55,13 @@ export class PinballPhysicsLab extends Phaser.Scene {
 
     private buildTable() {
         const { width, height } = this.scale;
+        const art = this.add.graphics().setDepth(1);
+        art.lineStyle(8, 0x2f8aa6, 0.9);
+        art.strokeRect(70, 180, width - 140, height - 360);
+        art.lineStyle(6, 0x5de6ff, 0.8);
+        art.lineBetween(160, 460, 350, 340); art.lineBetween(width - 160, 460, width - 350, 340);
+        art.lineStyle(6, 0xff5964, 0.85);
+        art.lineBetween(70, height - 180, 430, height - 180); art.lineBetween(650, height - 180, width - 70, height - 180);
         const wall = (a: [number, number], b: [number, number]) => {
             const body = this.world.createBody();
             body.createFixture(planck.Edge(this.v(...a), this.v(...b)), { restitution: 0.72, friction: 0.08 });
@@ -98,9 +107,11 @@ export class PinballPhysicsLab extends Phaser.Scene {
         const body = this.world.createDynamicBody({ position: this.v(x, y), angle: rest, userData: 'FLIPPER' });
         body.createFixture(planck.Box(this.px(100), this.px(12), this.v(side === 'left' ? 96 : -96, 0)), { density: 6, friction: 0.05, restitution: 0.55 });
         const pivot = this.world.createBody({ position: this.v(x, y) });
-        const joint = this.world.createJoint(planck.RevoluteJoint({ enableMotor: true, motorSpeed: 0, maxMotorTorque: 140, enableLimit: true, lowerAngle: Math.min(rest, active), upperAngle: Math.max(rest, active) }, pivot, body, pivot.getPosition()))!;
+        const swing = active - rest;
+        const joint = this.world.createJoint(planck.RevoluteJoint({ enableMotor: true, motorSpeed: 0, maxMotorTorque: 900, enableLimit: true, lowerAngle: Math.min(0, swing), upperAngle: Math.max(0, swing) }, pivot, body, pivot.getPosition()))!;
         const view = this.add.rectangle(x, y, 215, 28, 0xf4d697).setOrigin(side === 'left' ? 0 : 1, 0.5).setStrokeStyle(4, 0x5a2618);
         this.flippers.push({ body, joint, side, view });
+        this.add.text(x + (side === 'left' ? 85 : -85), y + 72, side.toUpperCase(), { fontSize: '18px', color: '#7df4ff', fontStyle: 'bold' }).setOrigin(0.5);
     }
 
     private setFlipper(side: 'left' | 'right', active: boolean) {
