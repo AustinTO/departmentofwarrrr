@@ -78,7 +78,29 @@ export class ProcurementScene extends Phaser.Scene {
         super('ProcurementScene');
     }
 
+    init() {
+        // A later fiscal year can revisit this scene on the same Phaser scene
+        // instance. Never carry a prior year's drained/authorized state into
+        // the next procurement table.
+        this.ball = undefined;
+        this.procurementList = {};
+        this.leadTimeDelay = 0;
+        this.score = 0;
+        this.contractAuthorized = false;
+        this.planck = undefined;
+        this.plungerPull = 0;
+        this.plungerDragging = false;
+        this.flipperPulse = { left: 0, right: 0 };
+        this.lastBumperHit.clear();
+        this.slideCooldown.clear();
+        this.returnLaneCooldown.clear();
+        this.combo = 0;
+        this.comboExpiresAt = 0;
+    }
+
     create() {
+        this.input.enabled = true;
+        this.events.on('wake', () => { this.input.enabled = true; });
         const { width, height } = this.scale;
         this.createBoardShell(width, height);
         this.add.rectangle(0, 0, width, 430, 0x02070d, 0.72).setOrigin(0);
