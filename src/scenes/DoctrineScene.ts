@@ -28,6 +28,11 @@ export class DoctrineScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.renderDoctrines(width, height);
+        this.add.rectangle(width - 130, 95, 220, 58, 0x17344a, 0.96)
+            .setStrokeStyle(2, 0x7df4ff)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => this.scene.start('PinballPhysicsLab'));
+        this.add.text(width - 130, 95, 'PLANCK LAB', { fontSize: '20px', color: '#d9f8ff', fontStyle: 'bold' }).setOrigin(0.5);
     }
 
     private renderDoctrines(width: number, _height: number) {
