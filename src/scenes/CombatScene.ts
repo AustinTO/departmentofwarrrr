@@ -6,6 +6,9 @@ import { WaveDirector } from '../game/WaveDirector';
 import { audioManager } from '../managers/AudioManager';
 import { currentRun } from '../state/RunState';
 import { getArcControlPoint, quadraticBezier } from '../game/Trajectory';
+import { CHARACTERS, characterLine } from '../game/Characters';
+import { scenarioForFiscalYear } from '../game/CombatScenarios';
+import type { CombatScenario } from '../game/CombatScenarios';
 
 export class CombatScene extends Phaser.Scene {
     private playerBase!: Phaser.GameObjects.Rectangle;
@@ -26,6 +29,10 @@ export class CombatScene extends Phaser.Scene {
     private interceptorShots = new Set<Phaser.GameObjects.Container>();
     private combo = 0;
     private comboExpiresAt = 0;
+    private weaponButtons = new Map<WeaponType, Phaser.GameObjects.Rectangle>();
+    private reloadText!: Phaser.GameObjects.Text;
+    private scenario!: CombatScenario;
+    private strikeIntegrity = 100;
 
     private hudTexts!: { 
         burn: Phaser.GameObjects.Text; 
@@ -50,17 +57,22 @@ export class CombatScene extends Phaser.Scene {
         this.comboExpiresAt = 0;
         this.interceptorShots.clear();
         this.waveDirector = new WaveDirector(Math.max(1, currentRun.currentFY - 2025));
+        this.scenario = scenarioForFiscalYear(currentRun.currentFY);
 
         // Background
-        this.add.image(width / 2, height / 2, 'combat_bg').setDisplaySize(width, height);
+        this.add.image(width / 2, height / 2, this.scenario.backgroundKey ?? 'combat_bg').setDisplaySize(width, height);
         this.add.rectangle(0, 0, width, height, 0x000000, 0.3).setOrigin(0); // Darken for readability
 
         audioManager.setScene(this);
         audioManager.playMusic('combat_music', true);
 
         // Player Base
-        this.playerBase = this.add.rectangle(width / 2, height - 100, 240, 60, 0x00ff00);
+        this.playerBase = this.add.rectangle(width / 2, height - 100, 300, 72, this.scenario.baseColor);
+        this.playerBase.setStrokeStyle(4, 0xffffff, 0.8);
+        this.add.rectangle(width / 2, height - 145, 140, 48, this.scenario.baseColor, 0.7).setStrokeStyle(3, 0xffffff, 0.65);
+        this.add.text(width / 2, height - 178, this.scenario.baseName, { fontSize: '19px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
         this.physics.add.existing(this.playerBase, true);
+        if (this.scenario.mode === 'strike') this.createStrikeTarget(width);
 
         // Groups
         this.threats = this.physics.add.group();
@@ -82,6 +94,7 @@ export class CombatScene extends Phaser.Scene {
 
         // HUD
         this.setupHUD(width, height);
+        this.add.text(width / 2, 122, this.scenario.location, { fontSize: '22px', color: '#a7dfff', fontStyle: 'bold' }).setOrigin(0.5);
         this.timeText = this.add.text(width / 2, 80, 'FY END: 60s', { fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
 
         // Wave Timer
@@ -155,7 +168,7 @@ export class CombatScene extends Phaser.Scene {
     private scheduleNextSpawn() {
         const baseSpawn = this.waveDirector.getNextSpawn(this.time.now);
         const freqMultiplier = currentRun.activeDoctrine?.effect.threatFrequency || 1.0;
-        const adjustedDelay = baseSpawn.delay / freqMultiplier;
+        const adjustedDelay = baseSpawn.delay / (freqMultiplier * this.scenario.spawnRate);
 
         this.spawnTimer = this.time.delayedCall(adjustedDelay, () => {
             this.spawnThreat(baseSpawn.type);
@@ -163,7 +176,24 @@ export class CombatScene extends Phaser.Scene {
         });
     }
 
+    private createStrikeTarget(width: number) {
+        const target = this.add.container(width / 2, 470).setDepth(4).setSize(300, 160).setInteractive({ useHandCursor: true });
+        target.add(this.add.rectangle(0, 0, 300, 160, 0x8b3a32, 0.9).setStrokeStyle(4, 0xffd27a));
+        target.add(this.add.rectangle(0, -46, 150, 44, 0x49444a, 0.95));
+        target.add(this.add.text(0, 0, this.scenario.strikeTarget ?? 'OBJECTIVE', { fontSize: '24px', color: '#fff4cf', fontStyle: 'bold', align: 'center', wordWrap: { width: 260 } }).setOrigin(0.5));
+        target.on('pointerdown', () => {
+            this.strikeIntegrity = Math.max(0, this.strikeIntegrity - 10);
+            this.hudTexts.combo.setText(`OBJECTIVE INTEGRITY: ${this.strikeIntegrity}%`);
+            this.cameras.main.flash(80, 255, 160, 80);
+            if (this.strikeIntegrity === 0) {
+                this.add.text(width / 2, 570, 'OBJECTIVE NEUTRALIZED\nPROCUREMENT JUSTIFICATION SECURED', { fontSize: '34px', color: '#ffdf6b', fontStyle: 'bold', align: 'center' }).setOrigin(0.5).setDepth(10);
+                target.destroy();
+            }
+        });
+    }
+
     private spawnThreat(type: ThreatType) {
+        if (Math.random() < 0.35) type = Phaser.Math.RND.pick(this.scenario.threatBias);
         const config = THREAT_CONFIGS[type];
         if (type === ThreatType.SWARM) {
             this.spawnSwarm(config);
@@ -181,18 +211,23 @@ export class CombatScene extends Phaser.Scene {
         
         let spriteKey = 'threat_shahed';
         switch(config.type) {
-            case ThreatType.LAWN_MOWER: spriteKey = 'threat_shahed'; break;
-            case ThreatType.SCOOTER: spriteKey = 'threat_scooter'; break;
+            case ThreatType.LAWN_MOWER: spriteKey = 'threat_heavy'; break;
+            case ThreatType.SCOOTER: spriteKey = 'threat_scout'; break;
             case ThreatType.MISSILE: spriteKey = 'threat_missile'; break;
-            case ThreatType.DECOY: spriteKey = 'threat_balloon'; break;
-            case ThreatType.SWARM: spriteKey = 'threat_scooter'; break;
-            case ThreatType.MYSTERY: spriteKey = 'threat_missile'; break;
+            case ThreatType.DECOY: spriteKey = 'threat_balloon_cluster'; break;
+            case ThreatType.SWARM: spriteKey = 'threat_swarm_leader'; break;
+            case ThreatType.MYSTERY: spriteKey = 'threat_stealth_anomaly'; break;
         }
 
         const sprite = this.add.sprite(0, 0, spriteKey);
-        sprite.setDisplaySize(config.radius * 2.5, config.radius * 2.5);
+        sprite.setDisplaySize(config.radius * 3.6, config.radius * 3.6);
+        if (config.type === ThreatType.LAWN_MOWER) sprite.setTint(Phaser.Math.RND.pick([0xffffff, 0xc6d8bf, 0xe4cfaa]));
+        if (config.type === ThreatType.SCOOTER || config.type === ThreatType.SWARM) sprite.setTint(Phaser.Math.RND.pick([0xffffff, 0xffc49b, 0xa7dfff]));
+        if (config.type === ThreatType.MYSTERY) sprite.setTint(0xa98cff);
         container.add(sprite);
-        sprite.setRotation(Math.PI); // Facing down
+        // The new heavy Shahed-style drone art is already nose-down. Legacy
+        // missile art still needs rotation to travel toward the player.
+        if (config.type === ThreatType.MISSILE) sprite.setRotation(Math.PI);
         if (config.type === ThreatType.DECOY) {
             this.tweens.add({
                 targets: sprite,
@@ -251,6 +286,7 @@ export class CombatScene extends Phaser.Scene {
             ammo: this.add.text(width / 2, 220, 'AMMO: UNLIMITED', style).setOrigin(0.5, 0),
             combo: this.add.text(width / 2, 285, 'CHAIN READY', { ...style, color: '#ffd166' }).setOrigin(0.5, 0)
         };
+        this.reloadText = this.add.text(width / 2, 345, 'SYSTEM READY', { fontSize: '22px', color: '#9dff8e', fontStyle: 'bold' }).setOrigin(0.5);
     }
 
     private setupWeaponButtons(width: number, height: number) {
@@ -261,23 +297,67 @@ export class CombatScene extends Phaser.Scene {
             const x = i * buttonWidth + buttonWidth / 2;
             const y = height - 50;
             
-            this.add.rectangle(x, y, buttonWidth - 10, 80, 0x333333)
-                .setInteractive()
+            const button = this.add.rectangle(x, y, buttonWidth - 10, 98, 0x333333)
+                .setStrokeStyle(3, 0x5c6770)
+                .setInteractive({ useHandCursor: true })
                 .on('pointerdown', () => this.setWeapon(type));
+            this.weaponButtons.set(type, button);
             
             let label = 'VULCAN';
             if (type === WeaponType.JAMMER) label = 'JAMMER';
             if (type === WeaponType.INTERCEPTOR) label = 'SM-3';
             if (type === WeaponType.INTERCEPTOR_BLOCK_II) label = 'SM-6';
             
-            this.add.text(x, y, label, { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+            this.add.text(x, y - 10, label, { fontSize: '28px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+            this.add.text(x, y + 27, this.weaponCostLabel(type), { fontSize: '17px', color: '#b9d5e6' }).setOrigin(0.5);
         });
+
+        this.updateWeaponSelectionFeedback();
     }
 
     private setWeapon(type: WeaponType) {
         this.currentWeapon = type;
         this.hudTexts.weapon.setText(`WEAPON: ${this.currentWeapon}`);
+        this.updateWeaponSelectionFeedback();
         this.updateHUD();
+    }
+
+    private weaponCostLabel(type: WeaponType) {
+        const cost = WEAPON_CONFIGS[type].cost;
+        return cost >= 1_000_000 ? `$${(cost / 1_000_000).toFixed(1)}M` : `$${(cost / 1_000).toFixed(1)}K`;
+    }
+
+    private updateWeaponSelectionFeedback() {
+        const config = WEAPON_CONFIGS[this.currentWeapon];
+        this.weaponButtons.forEach((button, type) => {
+            const selected = type === this.currentWeapon;
+            button.setFillStyle(selected ? 0x126a87 : 0x333333, selected ? 0.98 : 0.9);
+            button.setStrokeStyle(selected ? 5 : 3, selected ? 0x7df4ff : 0x5c6770);
+            button.setScale(selected ? 1.035 : 1);
+        });
+        this.showCombatCallout(config);
+    }
+
+    private showCombatCallout(config: { name: string }) {
+        const { width, height } = this.scale;
+        const card = this.add.container(0, height - 435).setDepth(50);
+        const panel = this.add.rectangle(width / 2, 0, width - 90, 128, 0x06111d, 0.94).setStrokeStyle(3, 0xf3ca67);
+        const portrait = this.add.image(104, 58, CHARACTERS.peter.portraitKey).setDisplaySize(106, 158).setOrigin(0.5, 1);
+        const ammo = this.currentWeapon === WeaponType.INTERCEPTOR || this.currentWeapon === WeaponType.INTERCEPTOR_BLOCK_II
+            ? currentRun.theaters.active.inventory[this.currentWeapon] ?? 0
+            : 'UNLIMITED';
+        const detail = this.add.text(178, -43, `${config.name}  •  ${this.weaponCostLabel(this.currentWeapon)} / SHOT  •  AMMO: ${ammo}`, {
+            fontSize: '19px', color: '#dff7ff', fontStyle: 'bold'
+        });
+        const line = this.add.text(178, -5, `PETER KEGSBREATH: “${characterLine('peter', 'combat')}”`, {
+            fontSize: '17px', color: '#f3ca67', wordWrap: { width: width - 275 }
+        });
+        card.add([panel, portrait, detail, line]);
+        card.setAlpha(0);
+        this.tweens.add({
+            targets: card, alpha: 1, y: height - 455, duration: 160, yoyo: true, hold: 1700,
+            onComplete: () => card.destroy()
+        });
     }
 
     private handleInput(pointer: Phaser.Input.Pointer) {
@@ -402,7 +482,16 @@ export class CombatScene extends Phaser.Scene {
         this.threats.getChildren().forEach((threat: any) => {
             const dist = Phaser.Math.Distance.Between(targetX, targetY, threat.x, threat.y);
             if (dist < config.radius) {
-                this.destroyThreat(threat, WeaponType.JAMMER);
+                const body = threat.body as Phaser.Physics.Arcade.Body;
+                body.setVelocityY(body.velocity.y * 0.18);
+                threat.setTint(0x00ffff);
+                threat.setAlpha(0.38);
+                threat.setData('jammed', true);
+                const label = this.add.text(threat.x, threat.y - 34, 'LINK LOST', { fontSize: '18px', color: '#74ffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(5);
+                this.tweens.add({ targets: label, y: label.y - 35, alpha: 0, duration: 800, onComplete: () => label.destroy() });
+                this.time.delayedCall(850, () => {
+                    if (threat.active && threat.getData('jammed')) this.destroyThreat(threat, WeaponType.JAMMER);
+                });
             }
         });
     }
@@ -636,6 +725,9 @@ export class CombatScene extends Phaser.Scene {
     }
 
     update() {
+        const reloadRemaining = Math.max(0, WEAPON_CONFIGS[this.currentWeapon].reloadTime - (this.time.now - this.lastFired));
+        this.reloadText.setText(reloadRemaining > 0 ? `RELOADING ${Math.ceil(reloadRemaining / 100) / 10}s` : 'SYSTEM READY')
+            .setColor(reloadRemaining > 0 ? '#ffd47c' : '#9dff8e');
         if (this.currentWeapon === WeaponType.GUN) this.autoFireVulcan();
         const delta = this.game.loop.delta;
         this.interceptorShots.forEach((shot) => {
