@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SVG-first pinball table (art space 1080x1600).
+  Sparse bumpers/targets. Small circular mouths = skill entries.
+  Cross-wire is OVERPASS. Ball r~28; dual slides keep >=112px gap.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1600" width="1080" height="1600">
+  <rect id="felt" x="0" y="0" width="1080" height="1600" fill="#0a1e2a"/>
+
+  <!-- ========== CABINET ========== -->
+  <polyline id="top-rail" data-kind="rail"
+    points="70,50 948,55" fill="none" stroke="#fff" stroke-width="10"/>
+  <polyline id="left-rail" data-kind="rail"
+    points="70,50 70,1520" fill="none" stroke="#fff" stroke-width="10"/>
+  <polyline id="right-rail" data-kind="rail"
+    points="1052,50 1052,1520" fill="none" stroke="#fff" stroke-width="10"/>
+  <polyline id="left-bottom-rail" data-kind="rail"
+    points="70,1520 420,1520" fill="none" stroke="#fff" stroke-width="10"/>
+  <polyline id="right-bottom-rail" data-kind="rail"
+    points="660,1520 1052,1520" fill="none" stroke="#fff" stroke-width="10"/>
+
+  <!-- Shooter tube -->
+  <polyline id="shooter-left" data-kind="rail"
+    points="968,1520 968,200" fill="none" stroke="#fff" stroke-width="10"/>
+  <polyline id="shooter-oneway" data-kind="rail"
+    points="968,200 968,70" fill="none" stroke="#8dff74" stroke-width="8"/>
+  <polyline id="shooter-exit" data-kind="rail"
+    points="1052,110 1020,55 940,42 820,48 700,58 560,65" fill="none" stroke="#fff" stroke-width="10"/>
+  <circle id="shooter-enter" data-kind="sensor" data-sensor="entrance" data-link="shooter"
+    cx="1010" cy="1180" r="28" fill="#8dff74" opacity="0.35"/>
+  <circle id="shooter-exit-gate" data-kind="sensor" data-sensor="exit" data-link="shooter"
+    cx="1010" cy="160" r="28" fill="#ff66aa" opacity="0.35"/>
+
+  <!-- Apron / inlanes -->
+  <polyline id="left-return" data-kind="rail"
+    points="160,1180 145,1320 130,1400" fill="none" stroke="#fff" stroke-width="8"/>
+  <polyline id="right-return" data-kind="rail"
+    points="890,1180 905,1320 920,1400" fill="none" stroke="#fff" stroke-width="8"/>
+  <polyline id="left-apron" data-kind="rail"
+    points="70,1340 200,1400 290,1440" fill="none" stroke="#fff" stroke-width="8"/>
+  <polyline id="right-apron" data-kind="rail"
+    points="948,1340 840,1400 750,1440" fill="none" stroke="#fff" stroke-width="8"/>
+
+  <!-- ========== LEFT RAMP ========== -->
+  <polyline id="left-ramp-outer" data-kind="slide" data-link="left-ramp"
+    points="175,1140 160,1000 145,880 140,760 150,640 175,520 205,420 225,320"
+    fill="none" stroke="#5de6ff" stroke-width="6"/>
+  <polyline id="left-ramp-inner" data-kind="slide" data-link="left-ramp"
+    points="295,1150 280,1000 265,880 260,760 270,640 295,520 325,420 345,320"
+    fill="none" stroke="#5de6ff" stroke-width="6"/>
+  <!-- Narrow skill gate at ramp mouth -->
+  <polyline id="left-ramp-gate-l" data-kind="rail"
+    points="200,1165 218,1135" fill="none" stroke="#fff" stroke-width="8"/>
+  <polyline id="left-ramp-gate-r" data-kind="rail"
+    points="270,1168 252,1138" fill="none" stroke="#fff" stroke-width="8"/>
+  <circle id="left-ramp-enter" data-kind="sensor" data-sensor="entrance" data-link="left-ramp"
+    cx="235" cy="1125" r="22" fill="#8dff74" opacity="0.45"/>
+  <circle id="left-ramp-exit" data-kind="sensor" data-sensor="exit" data-link="left-ramp"
+    cx="285" cy="315" r="22" fill="#ff66aa" opacity="0.45"/>
+
+  <polyline id="left-tunnel-hood" data-kind="rail"
+    points="70,270 160,265 230,280 250,305"
+    fill="none" stroke="#fff" stroke-width="10"/>
+  <!-- Tight tunnel keyhole -->
+  <polyline id="left-tunnel-gate-l" data-kind="rail"
+    points="255,300 268,278" fill="none" stroke="#fff" stroke-width="7"/>
+  <polyline id="left-tunnel-gate-r" data-kind="rail"
+    points="315,300 302,278" fill="none" stroke="#fff" stroke-width="7"/>
+  <circle id="tunnel-loop-enter" data-kind="tunnel-enter" data-link="loop"
+    cx="285" cy="272" r="24" fill="#ff66aa" opacity="0.55"/>
+  <circle id="tunnel-loop-exit" data-kind="tunnel-exit" data-link="loop"
+    cx="540" cy="920" r="26" fill="#c084fc" opacity="0.55"/>
+
+  <!-- ========== RIGHT RAMP ========== -->
+  <polyline id="right-ramp-outer" data-kind="slide" data-link="right-ramp"
+    points="885,1140 900,1000 915,880 920,760 910,640 885,520 855,420 835,320"
+    fill="none" stroke="#5de6ff" stroke-width="6"/>
+  <polyline id="right-ramp-inner" data-kind="slide" data-link="right-ramp"
+    points="765,1150 780,1000 795,880 800,760 790,640 765,520 735,420 715,320"
+    fill="none" stroke="#5de6ff" stroke-width="6"/>
+  <polyline id="right-ramp-gate-l" data-kind="rail"
+    points="790,1168 808,1138" fill="none" stroke="#fff" stroke-width="8"/>
+  <polyline id="right-ramp-gate-r" data-kind="rail"
+    points="860,1165 842,1135" fill="none" stroke="#fff" stroke-width="8"/>
+  <circle id="right-ramp-enter" data-kind="sensor" data-sensor="entrance" data-link="right-ramp"
+    cx="825" cy="1125" r="22" fill="#8dff74" opacity="0.45"/>
+  <circle id="right-ramp-exit" data-kind="sensor" data-sensor="exit" data-link="right-ramp"
+    cx="775" cy="315" r="22" fill="#ff66aa" opacity="0.45"/>
+
+  <polyline id="right-tunnel-hood" data-kind="rail"
+    points="960,270 880,265 820,280 800,305"
+    fill="none" stroke="#fff" stroke-width="10"/>
+
+  <!-- Cross-wire OVERPASS: left ramp → right ramp; only mounts while armed -->
+  <polyline id="cross-wire-outer" data-kind="slide" data-link="cross-wire" data-layer="overpass"
+    points="200,730 320,710 460,700 620,700 760,710 880,730"
+    fill="none" stroke="#ffb020" stroke-width="6" stroke-dasharray="16 14"/>
+  <polyline id="cross-wire-inner" data-kind="slide" data-link="cross-wire" data-layer="overpass"
+    points="200,850 320,830 460,820 620,820 760,830 880,850"
+    fill="none" stroke="#ffb020" stroke-width="6" stroke-dasharray="16 14"/>
+  <circle id="cross-wire-enter" data-kind="sensor" data-sensor="entrance" data-link="cross-wire"
+    cx="220" cy="790" r="20" fill="#8dff74" opacity="0.4"/>
+  <circle id="cross-wire-exit" data-kind="sensor" data-sensor="exit" data-link="cross-wire"
+    cx="860" cy="790" r="20" fill="#ff66aa" opacity="0.4"/>
+
+  <!-- Sparse bumpers; emergency is small and tucked for skill multiball -->
+  <circle id="jackpot" data-kind="bumper" cx="540" cy="380" r="48" fill="#ffca4f"/>
+  <circle id="sole-source" data-kind="bumper" cx="360" cy="620" r="34" fill="#ff8a3d"/>
+  <circle id="requirements-creep" data-kind="bumper" cx="720" cy="620" r="34" fill="#ff8a3d"/>
+  <circle id="audit-failed" data-kind="bumper" cx="340" cy="1140" r="34" fill="#ff5544"/>
+  <circle id="fixed-price" data-kind="bumper" cx="740" cy="1140" r="30" fill="#79e66a"/>
+  <circle id="emergency-supplemental" data-kind="bumper" cx="540" cy="250" r="22" fill="#ff5544"/>
+
+  <!-- Targets: skill + small bank -->
+  <rect id="skill-gate" data-kind="target" data-event="SKILL_SHOT"
+    x="480" y="195" width="120" height="28" fill="#ffd166"/>
+  <rect id="target-left" data-kind="target" data-event="TARGET_HIT"
+    x="430" y="480" width="60" height="24" fill="#a8ff93"/>
+  <rect id="target-right" data-kind="target" data-event="TARGET_HIT"
+    x="590" y="480" width="60" height="24" fill="#a8ff93"/>
+
+  <!-- Slings + apron posts -->
+  <rect id="left-sling" data-kind="sling" x="165" y="1250" width="130" height="28"
+    fill="#ff8844" transform="rotate(32 230 1264)"/>
+  <rect id="right-sling" data-kind="sling" x="785" y="1250" width="130" height="28"
+    fill="#ff8844" transform="rotate(-32 850 1264)"/>
+  <circle id="left-apron-post" data-kind="post" cx="350" cy="1210" r="14" fill="#ff66aa"/>
+  <circle id="right-apron-post" data-kind="post" cx="730" cy="1210" r="14" fill="#ff66aa"/>
+
+  <!-- Flippers + drain -->
+  <rect id="left-flipper" data-kind="flipper" x="130" y="1400" width="280" height="40" fill="#5de6ff"/>
+  <rect id="right-flipper" data-kind="flipper" x="670" y="1400" width="280" height="40" fill="#5de6ff"/>
+  <rect id="drain" data-kind="drain" x="430" y="1502" width="220" height="36" fill="#333" opacity="0.5"/>
+</svg>

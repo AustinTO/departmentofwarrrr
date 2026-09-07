@@ -33,11 +33,11 @@ export class TableAuthorOverlay {
     private readonly sensorLabels: Phaser.GameObjects.Text[] = [];
     private handles: Phaser.GameObjects.Arc[] = [];
     private layers: Record<AuthorLayer, boolean> = {
-        physics: true,
-        rails: true,
-        sensors: true,
-        anchors: true,
-        points: true,
+        physics: false,
+        rails: false,
+        sensors: false,
+        anchors: false,
+        points: false,
         trajectory: true
     };
     private selectedId: string | null = null;

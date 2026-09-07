@@ -1,5 +1,6 @@
 import { WeaponType } from './config';
 import type { ProcurementBumper, TableObject } from './ProcurementTableDefinition';
+import { kitTableObjects, mergeBumpersFromKit } from './pinballKit';
 
 export type PinballBoardId = 'appropriations' | 'audit_chamber' | 'supplemental_stadium';
 
@@ -520,18 +521,12 @@ export function railsAlignedToPlayfield(table: readonly TableObject[]): boolean 
 // Bumpers in art-mapped game space (open felt between painted ramps).
 
 const APPROPRIATIONS_BUMPERS: readonly ProcurementBumper[] = [
-    { id: 'jackpot', x: artPoint(540, 320)[0], y: artPoint(540, 320)[1], radius: 64, label: 'JACKPOT', value: 100_000_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20, outcome: 'inflate', badgeFrame: 0 },
-    { id: 'sole-source', x: artPoint(400, 520)[0], y: artPoint(400, 520)[1], radius: 32, label: 'SOLE SOURCE', value: 35_000_000_000, delay: 1.2, color: 0xff8a3d, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 6, outcome: 'inflate', badgeFrame: 4 },
-    { id: 'requirements-creep', x: artPoint(680, 520)[0], y: artPoint(680, 520)[1], radius: 32, label: 'REQ CREEP', value: 28_000_000_000, delay: 0.8, color: 0xff8a3d, weapon: WeaponType.INTERCEPTOR, quantity: 15, outcome: 'inflate', badgeFrame: 5 },
-    { id: 'classified-addon', x: artPoint(540, 640)[0], y: artPoint(540, 640)[1], radius: 38, label: 'CLASSIFIED', value: 40_000_000_000, delay: 1.5, color: 0xc084fc, weapon: WeaponType.HYDRA, quantity: 4, outcome: 'inflate', badgeFrame: 6 },
-    { id: 'emergency-supplemental', x: artPoint(540, 820)[0], y: artPoint(540, 820)[1], radius: 46, label: 'EMERGENCY', value: 55_000_000_000, delay: 1.8, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 25, outcome: 'inflate', badgeFrame: 7 },
-    { id: 'audit-failed', x: artPoint(380, 980)[0], y: artPoint(380, 980)[1], radius: 40, label: 'AUDIT FAILED', value: 50_000_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50, outcome: 'inflate', badgeFrame: 1 },
-    { id: 'cost-overrun', x: artPoint(700, 980)[0], y: artPoint(700, 980)[1], radius: 40, label: 'COST OVERRUN', value: 25_000_000_000, delay: 0.2, color: 0xff5544, weapon: WeaponType.RAILGUN, quantity: 8, outcome: 'inflate', badgeFrame: 2 },
-    { id: 'urgent-need', x: artPoint(540, 1320)[0], y: artPoint(540, 1320)[1], radius: 40, label: 'URGENT NEED', value: 10_000_000_000, delay: 0.5, color: 0x8dff74, weapon: WeaponType.INTERCEPTOR, quantity: 10, outcome: 'inflate', badgeFrame: 3 },
-    { id: 'actual-requirements', x: artPoint(430, 720)[0], y: artPoint(430, 720)[1], radius: 28, label: 'ACTUAL REQ', value: -2_000_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency', badgeFrame: 8 },
-    { id: 'fixed-price', x: artPoint(650, 720)[0], y: artPoint(650, 720)[1], radius: 28, label: 'FIXED PRICE', value: -2_000_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency', badgeFrame: 9 },
-    { id: 'risk-premium', x: artPoint(420, 1120)[0], y: artPoint(420, 1120)[1], radius: 26, label: 'RISK PREMIUM', value: 5_000_000_000, delay: 0.2, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 2, outcome: 'inflate', badgeFrame: 10 },
-    { id: 'competitive-bid', x: artPoint(660, 1120)[0], y: artPoint(660, 1120)[1], radius: 26, label: 'COMP BID', value: -1_000_000_000, delay: -0.1, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 0, outcome: 'efficiency', badgeFrame: 11 }
+    { id: 'jackpot', x: artPoint(540, 400)[0], y: artPoint(540, 400)[1], radius: 46, label: 'JACKPOT', value: 100_000_000_000, delay: 2, color: 0xffca4f, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 20, outcome: 'inflate', badgeFrame: 0 },
+    { id: 'sole-source', x: artPoint(455, 640)[0], y: artPoint(455, 640)[1], radius: 32, label: 'SOLE SOURCE', value: 35_000_000_000, delay: 1.2, color: 0xff8a3d, weapon: WeaponType.INTERCEPTOR_BLOCK_II, quantity: 6, outcome: 'inflate', badgeFrame: 4 },
+    { id: 'requirements-creep', x: artPoint(625, 640)[0], y: artPoint(625, 640)[1], radius: 32, label: 'REQ CREEP', value: 28_000_000_000, delay: 0.8, color: 0xff8a3d, weapon: WeaponType.INTERCEPTOR, quantity: 15, outcome: 'inflate', badgeFrame: 5 },
+    { id: 'emergency-supplemental', x: artPoint(540, 195)[0], y: artPoint(540, 195)[1], radius: 22, label: 'EMERGENCY', value: 55_000_000_000, delay: 1.8, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 25, outcome: 'inflate', badgeFrame: 7 },
+    { id: 'audit-failed', x: artPoint(470, 1040)[0], y: artPoint(470, 1040)[1], radius: 30, label: 'AUDIT FAILED', value: 50_000_000_000, delay: 1, color: 0xff5544, weapon: WeaponType.INTERCEPTOR, quantity: 50, outcome: 'inflate', badgeFrame: 1 },
+    { id: 'fixed-price', x: artPoint(610, 1040)[0], y: artPoint(610, 1040)[1], radius: 28, label: 'FIXED PRICE', value: -2_000_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency', badgeFrame: 9 }
 ];
 
 const AUDIT_BUMPERS: readonly ProcurementBumper[] = [
@@ -548,6 +543,7 @@ const AUDIT_BUMPERS: readonly ProcurementBumper[] = [
     { id: 'risk-pool', x: artPoint(620, 880)[0], y: artPoint(620, 880)[1], radius: 26, label: 'RISK POOL', value: 6_000_000_000, delay: 0.25, color: 0x57b8ff, weapon: WeaponType.SEEKER, quantity: 3, outcome: 'inflate', badgeFrame: 10 },
     { id: 'competitive-audit', x: artPoint(400, 1140)[0], y: artPoint(400, 1140)[1], radius: 28, label: 'COMP BID', value: -1_200_000_000, delay: -0.1, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 0, outcome: 'efficiency', badgeFrame: 11 }
 ];
+void AUDIT_BUMPERS;
 
 const STADIUM_BUMPERS: readonly ProcurementBumper[] = [
     { id: 'stadium-jackpot', x: artPoint(540, 260)[0], y: artPoint(540, 260)[1], radius: 58, label: 'SUPER BOWL', value: 120_000_000_000, delay: 2.2, color: 0xffca4f, weapon: WeaponType.SEEKER, quantity: 15, outcome: 'inflate', badgeFrame: 0 },
@@ -564,42 +560,59 @@ const STADIUM_BUMPERS: readonly ProcurementBumper[] = [
     { id: 'fair-play', x: artPoint(630, 640)[0], y: artPoint(630, 640)[1], radius: 26, label: 'FAIR PLAY', value: -1_000_000_000, delay: -0.1, color: 0x57b8ff, weapon: WeaponType.JAMMER, quantity: 0, outcome: 'efficiency', badgeFrame: 11 },
     { id: 'audit-booth', x: artPoint(540, 920)[0], y: artPoint(540, 920)[1], radius: 30, label: 'AUDIT BOOTH', value: -1_800_000_000, delay: -0.2, color: 0x79e66a, weapon: WeaponType.GUN, quantity: 0, outcome: 'efficiency', badgeFrame: 8 }
 ];
+void STADIUM_BUMPERS;
 
 const APPROPRIATIONS_SHELL = appropriationsShell();
 const AUDIT_SHELL = auditChamberShell();
 const STADIUM_SHELL = stadiumShell();
 
+/** Kit is the live playfield; legacy shells remain for reference/fingerprint tests only. */
+void APPROPRIATIONS_SHELL;
+void AUDIT_SHELL;
+void STADIUM_SHELL;
+
+function liveBumpers(raw: readonly ProcurementBumper[]): ProcurementBumper[] {
+    return mergeBumpersFromKit(raw);
+}
+
+/** One kit-assembled table for all boards this milestone. */
+function liveTable(bumpers: readonly ProcurementBumper[]): TableObject[] {
+    return buildTable(bumpers, kitTableObjects());
+}
+
+const LIVE_BUMPERS = liveBumpers(APPROPRIATIONS_BUMPERS);
+
 export const PINBALL_BOARDS: Record<PinballBoardId, PinballBoardDef> = {
     appropriations: {
         id: 'appropriations',
         name: 'APPROPRIATIONS TABLE',
-        subtitle: 'Classic cost-inflation circuit',
+        subtitle: 'Kit playfield • ramps • tunnels',
         playfieldKey: 'pinball_playfield',
         accent: 0x5de6ff,
-        bumpers: APPROPRIATIONS_BUMPERS,
-        table: buildTable(APPROPRIATIONS_BUMPERS, APPROPRIATIONS_SHELL)
+        bumpers: LIVE_BUMPERS,
+        table: liveTable(LIVE_BUMPERS)
     },
     audit_chamber: {
         id: 'audit_chamber',
         name: 'AUDIT CHAMBER',
-        subtitle: 'Leather pads • brass pipes • evidence stack',
+        subtitle: 'Kit playfield • audit satire',
         playfieldKey: 'pinball_playfield_audit',
         accent: 0xd4a017,
         unlockFy: 2027,
         unlockMansions: 2,
-        bumpers: AUDIT_BUMPERS,
-        table: buildTable(AUDIT_BUMPERS, AUDIT_SHELL)
+        bumpers: LIVE_BUMPERS,
+        table: liveTable(LIVE_BUMPERS)
     },
     supplemental_stadium: {
         id: 'supplemental_stadium',
         name: 'SUPPLEMENTAL STADIUM',
-        subtitle: 'Arena S-ramps • bunker skill • diamond bank',
+        subtitle: 'Kit playfield • stadium satire',
         playfieldKey: 'pinball_playfield_stadium',
         accent: 0xff66aa,
         unlockFy: 2028,
         unlockMansions: 6,
-        bumpers: STADIUM_BUMPERS,
-        table: buildTable(STADIUM_BUMPERS, STADIUM_SHELL)
+        bumpers: LIVE_BUMPERS,
+        table: liveTable(LIVE_BUMPERS)
     }
 };
 
@@ -632,8 +645,8 @@ export const PINBALL_SIZING = {
     flipperTipOffsetPx: 125,
     /** Cabinet rail slab half-thickness (px). */
     railHalfThicknessPx: 5,
-    /** Ramp/slide edge half-thickness — thin so channels stay rideable. */
-    slideHalfThicknessPx: 3,
+    /** Ramp/slide edge half-thickness — keep thin so dual channels stay rideable. */
+    slideHalfThicknessPx: 2,
     /** Minimum outer/inner midline gap for dual-edge ramps (art px). */
     minChannelGapPx: MIN_CHANNEL_GAP
 };

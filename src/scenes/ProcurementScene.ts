@@ -12,6 +12,7 @@ import { TableAuthorOverlay } from '../ui/TableAuthorOverlay';
 import { isAuthorHashEnabled, resolveBoardTable } from '../game/TableAuthorStore';
 import { audioManager } from '../managers/AudioManager';
 import { SHEETS } from '../game/Sprites';
+import { destroyHardwarePieces, drawPinballHardware, type HardwareDrawResult } from '../game/PinballHardwareDraw';
 
 type FlipperSide = 'left' | 'right';
 
@@ -30,9 +31,10 @@ export class ProcurementScene extends Phaser.Scene {
     private bumpers: readonly ProcurementBumper[] = [];
     private bumperSprites = new Map<string, Phaser.GameObjects.Image>();
     private bumperHalos = new Map<string, Phaser.GameObjects.Arc>();
+    private bumperBaseScale = new Map<string, number>();
     private slingSprites = new Map<string, Phaser.GameObjects.Image>();
     private targetSprites = new Map<string, Phaser.GameObjects.Image>();
-    private postSprites = new Map<string, Phaser.GameObjects.Arc>();
+    private postSprites = new Map<string, Phaser.GameObjects.Image>();
     private laneGlows = new Map<string, Phaser.GameObjects.Graphics>();
     private leftFlipper!: Phaser.GameObjects.Container;
     private rightFlipper!: Phaser.GameObjects.Container;
@@ -50,6 +52,9 @@ export class ProcurementScene extends Phaser.Scene {
     private skillArmedRing?: Phaser.GameObjects.Arc;
     private targetBankText!: Phaser.GameObjects.Text;
     private targetBankHits = 0;
+    /** Emergency bumper hits toward multiball (needs several clean hits). */
+    private emergencyHits = 0;
+    private multiballEarnedThisBall = false;
     private adviserPortrait!: Phaser.GameObjects.Image;
     private adviserName!: Phaser.GameObjects.Text;
     private adviserLine!: Phaser.GameObjects.Text;
@@ -62,7 +67,7 @@ export class ProcurementScene extends Phaser.Scene {
     private flipperY = PLAYFIELD_LAYOUT.originY + 1420;
     private readonly ballRadius = PINBALL_SIZING.ballRadiusPx;
     private workingTable: TableObject[] = [];
-    private railGraphics?: Phaser.GameObjects.Graphics;
+    private hardwarePieces?: HardwareDrawResult;
     private author?: TableAuthorOverlay;
     private authorEnabled = false;
 
@@ -82,15 +87,19 @@ export class ProcurementScene extends Phaser.Scene {
         this.pauseMenu = undefined;
         this.showingCard = false;
         this.targetBankHits = 0;
+        this.emergencyHits = 0;
+        this.multiballEarnedThisBall = false;
         this.bumperSprites.clear();
         this.bumperHalos.clear();
+        this.bumperBaseScale.clear();
         this.slingSprites.clear();
         this.targetSprites.clear();
         this.postSprites.clear();
         this.laneGlows.clear();
         this.author?.destroy();
         this.author = undefined;
-        this.railGraphics = undefined;
+        destroyHardwarePieces(this.hardwarePieces);
+        this.hardwarePieces = undefined;
         this.authorEnabled = isAuthorHashEnabled();
         currentRun.syncUnlocks();
         this.boardId = currentRun.selectedBoard;
@@ -252,86 +261,50 @@ export class ProcurementScene extends Phaser.Scene {
 
     private createBoardShell(width: number, height: number) {
         const board = PINBALL_BOARDS[this.boardId];
-        // 1:1 art placement — rails are authored in the same coordinate space.
+        // Baked kit skin — rails/ramps/mouths painted into the playfield PNG.
         this.add.image(
             PLAYFIELD_LAYOUT.originX + PLAYFIELD_LAYOUT.artWidth / 2,
             PLAYFIELD_LAYOUT.originY + PLAYFIELD_LAYOUT.artHeight / 2,
             board.playfieldKey
         )
             .setDisplaySize(PLAYFIELD_LAYOUT.artWidth, PLAYFIELD_LAYOUT.artHeight)
-            .setAlpha(0.96)
+            .setAlpha(1)
             .setDepth(0);
-        this.add.rectangle(width / 2, PLAYFIELD_LAYOUT.centerY, width - 40, PLAYFIELD_LAYOUT.artHeight + 20, 0x071b28, 0.12)
-            .setStrokeStyle(6, board.accent, 0.35)
+        this.add.rectangle(width / 2, PLAYFIELD_LAYOUT.centerY, width - 40, PLAYFIELD_LAYOUT.artHeight + 20, 0x071b28, 0)
+            .setStrokeStyle(6, board.accent, 0.45)
             .setDepth(1);
         this.createCabinetLights(width, height);
 
         const skill = skillGateFromTable(this.workingTable);
         const skillX = skill?.x ?? width / 2;
-        const skillY = skill?.y ?? PLAYFIELD_LAYOUT.originY + 180;
-        const skillW = Math.max(220, (skill?.width ?? 170) * 1.55);
+        const skillY = skill?.y ?? PLAYFIELD_LAYOUT.originY + 200;
+        const skillW = Math.max(160, (skill?.width ?? 120) * 1.15);
         this.skillLane = this.add.image(skillX, skillY, 'pinball_skill_gate')
-            .setDisplaySize(skillW, 88)
+            .setDisplaySize(skillW, 64)
             .setDepth(5);
-        this.skillArmedRing = this.add.circle(skillX, skillY, Math.max(80, skillW * 0.36), board.accent, 0)
+        this.skillArmedRing = this.add.circle(skillX, skillY, Math.max(56, skillW * 0.34), board.accent, 0)
             .setStrokeStyle(4, board.accent, 0.0)
             .setDepth(4);
-        this.add.text(skillX, skillY - 44, 'SKILL SHOT', {
-            fontSize: '16px', color: '#ffd166', fontStyle: 'bold'
+        this.add.text(skillX, skillY - 36, 'SKILL SHOT', {
+            fontSize: '15px', color: '#ffd166', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(6);
-        this.add.text(width / 2, 438, board.subtitle.toUpperCase(), {
-            fontSize: '15px', color: '#9bcbd4', fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(20);
     }
 
     /**
-     * Thin collision outlines only — painted ramps in the art stay the visual rails.
-     * Overlay must sit exactly on physics polylines.
+     * Live overlays only (mouths / wire posts). Geometry skin is the playfield PNG.
      */
     private createRails() {
         this.redrawRails();
     }
 
     private redrawRails() {
-        this.railGraphics?.destroy();
-        this.laneGlows.forEach((g) => g.destroy());
+        destroyHardwarePieces(this.hardwarePieces);
         this.laneGlows.clear();
+
         const accent = PINBALL_BOARDS[this.boardId].accent;
-        const table = this.workingTable;
-        const outline = this.add.graphics().setDepth(3);
-        this.railGraphics = outline;
-
-        const strokePoly = (
-            points: Array<[number, number]>,
-            width: number,
-            color: number,
-            alpha: number
-        ) => {
-            outline.lineStyle(width, color, alpha);
-            outline.beginPath();
-            outline.moveTo(points[0][0], points[0][1]);
-            for (let i = 1; i < points.length; i++) outline.lineTo(points[i][0], points[i][1]);
-            outline.strokePath();
-        };
-
-        table.forEach((entry) => {
-            if ((entry.kind !== 'wall' && entry.kind !== 'slide') || !entry.points || entry.points.length < 2) return;
-            const isSlide = entry.kind === 'slide';
-            strokePoly(entry.points, isSlide ? 14 : 11, accent, isSlide ? 0.22 : 0.16);
-            strokePoly(entry.points, isSlide ? 4 : 3, 0xffffff, 0.28);
-
-            if (isSlide) {
-                const lane = this.add.graphics().setDepth(4).setAlpha(0.12);
-                lane.lineStyle(12, accent, 1);
-                lane.beginPath();
-                lane.moveTo(entry.points[0][0], entry.points[0][1]);
-                for (let i = 1; i < entry.points.length; i++) {
-                    lane.lineTo(entry.points[i][0], entry.points[i][1]);
-                }
-                lane.strokePath();
-                this.laneGlows.set(entry.id, lane);
-            }
-        });
+        const drawn = drawPinballHardware(this, this.workingTable, accent, 3);
+        this.hardwarePieces = drawn;
+        drawn.laneGlows.forEach((g, id) => this.laneGlows.set(id, g));
         this.author?.redraw();
     }
 
@@ -352,21 +325,22 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     private createSlingVisual(entry: TableObject) {
+        // Rubber strip only — triangle body is baked into the playfield art.
         const sprite = this.add.image(entry.x, entry.y, 'pinball_sling')
-            .setDisplaySize((entry.width ?? 120) * 1.15, (entry.height ?? 28) * 3.2)
+            .setDisplaySize((entry.width ?? 120) * 1.05, (entry.height ?? 28) * 1.6)
             .setRotation(entry.angle ?? 0)
-            .setDepth(6);
+            .setDepth(8)
+            .setAlpha(0.92);
         if ((entry.angle ?? 0) < 0) sprite.setFlipX(true);
         this.slingSprites.set(entry.id, sprite);
     }
 
     private createPostVisual(entry: TableObject) {
         const r = entry.radius ?? 14;
-        const rubber = this.add.circle(entry.x, entry.y, r + 4, 0x1a2430, 0.95)
-            .setStrokeStyle(3, 0xd7ecff, 0.95)
+        const sprite = this.add.image(entry.x, entry.y, 'pinball_rail_post')
+            .setDisplaySize(r * 3.4, r * 3.4)
             .setDepth(6);
-        this.add.circle(entry.x, entry.y, r * 0.45, PINBALL_BOARDS[this.boardId].accent, 0.75).setDepth(7);
-        this.postSprites.set(entry.id, rubber);
+        this.postSprites.set(entry.id, sprite);
     }
 
     private createTargetVisual(entry: TableObject) {
@@ -437,23 +411,21 @@ export class ProcurementScene extends Phaser.Scene {
     private createBumpers(width: number) {
         this.bumpers = PINBALL_BOARDS[this.boardId].bumpers;
         this.bumpers.forEach((bumper) => {
-            const halo = this.add.circle(bumper.x, bumper.y, bumper.radius * 1.42, bumper.outcome === 'inflate' ? 0xffc24d : 0x7dff9d, 0.14)
+            const halo = this.add.circle(bumper.x, bumper.y, bumper.radius * 1.55, bumper.outcome === 'inflate' ? 0xffc24d : 0x7dff9d, 0.18)
                 .setBlendMode(Phaser.BlendModes.ADD)
                 .setDepth(5);
             this.bumperHalos.set(bumper.id, halo);
-            const badge = this.add.image(bumper.x, bumper.y, 'sheet_pinball_bumpers', bumper.badgeFrame)
-                .setDisplaySize(bumper.radius * 2.35, bumper.radius * 2.35)
+            // Chrome body reads as the physical piece; badge sits small on top.
+            this.add.image(bumper.x, bumper.y, 'pinball_bumper')
+                .setDisplaySize(bumper.radius * 3.15, bumper.radius * 3.15)
                 .setDepth(6);
+            const badge = this.add.image(bumper.x, bumper.y, 'sheet_pinball_bumpers', bumper.badgeFrame)
+                .setDisplaySize(bumper.radius * 1.35, bumper.radius * 1.35)
+                .setDepth(7);
             this.bumperSprites.set(bumper.id, badge);
-            this.add.text(bumper.x, bumper.y + bumper.radius + 14, bumper.outcome === 'inflate' ? '▲ INFLATE' : '▼ EFFICIENCY', {
-                fontSize: '13px',
-                color: bumper.outcome === 'inflate' ? '#ffd166' : '#9dff8e',
-                fontStyle: 'bold'
-            }).setOrigin(0.5).setDepth(6);
+            this.bumperBaseScale.set(bumper.id, badge.scaleX);
         });
-        this.add.text(width / 2, 1585, 'GOLD BUMPERS INFLATE  •  GREEN SHRINKS THE CONTRACT', {
-            fontSize: '15px', color: '#9bcbd4', fontStyle: 'bold'
-        }).setOrigin(0.5);
+        void width;
     }
 
     private createFlippers(width: number) {
@@ -463,19 +435,13 @@ export class ProcurementScene extends Phaser.Scene {
         this.flipperY = left?.y ?? right?.y ?? PLAYFIELD_LAYOUT.originY + 1420;
         this.leftFlipper = this.createVisibleFlipper(left?.x ?? 270, 'left');
         this.rightFlipper = this.createVisibleFlipper(right?.x ?? width - 270, 'right');
-        this.add.text(left?.x ?? 220, this.flipperY + 88, 'LEFT FLIPPER\nHOLD TO FLIP', {
-            fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center'
-        }).setOrigin(0.5);
-        this.add.text(right?.x ?? width - 220, this.flipperY + 88, 'RIGHT FLIPPER\nHOLD TO FLIP', {
-            fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center'
-        }).setOrigin(0.5);
     }
 
     private createVisibleFlipper(x: number, side: FlipperSide) {
         const container = this.add.container(x, this.flipperY).setDepth(12);
         const tip = PINBALL_SIZING.flipperTipOffsetPx;
         const blade = this.add.image(side === 'left' ? tip - 20 : -(tip - 20), 0, side === 'left' ? 'flipper_left' : 'flipper_right')
-            .setDisplaySize(290, 90);
+            .setDisplaySize(330, 108);
         container.add(blade);
         container.setRotation(side === 'left' ? Phaser.Math.DegToRad(18) : Phaser.Math.DegToRad(-18));
         return container;
@@ -518,16 +484,19 @@ export class ProcurementScene extends Phaser.Scene {
             this.updatePlungerPull(pointer, plungerY);
         });
 
-        this.authorizeButton = this.add.rectangle(width / 2, height - 112, 430, 84, 0x087a42, 0.92)
-            .setStrokeStyle(3, 0xa8ff93)
+        this.authorizeButton = this.add.rectangle(width / 2, 318, 280, 44, 0x087a42, 0.92)
+            .setStrokeStyle(2, 0xa8ff93)
             .setInteractive({ useHandCursor: true })
-            .setDepth(20);
-        this.add.text(width / 2, height - 112, 'AUTHORIZE CONTRACT', {
-            fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(21);
-        this.authorizeButton.on('pointerdown', () => this.authorizeContract());
+            .setDepth(22);
+        this.add.text(width / 2, 318, 'AUTHORIZE CONTRACT', {
+            fontSize: '18px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(23);
+        this.authorizeButton.on('pointerdown', (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
+            event.stopPropagation();
+            this.authorizeContract();
+        });
 
-        this.add.image(width / 2, this.flipperY + 48, 'pinball_drain').setDisplaySize(310, 76).setDepth(-1);
+        this.add.image(width / 2, this.flipperY + 56, 'pinball_drain').setDisplaySize(200, 48).setDepth(-1).setAlpha(0.55);
         this.add.text(116, height - 48, 'EXIT TO MCLEAN', { fontSize: '18px', color: '#d3dce4', fontStyle: 'bold' })
             .setOrigin(0.5)
             .setInteractive({ useHandCursor: true })
@@ -627,6 +596,8 @@ export class ProcurementScene extends Phaser.Scene {
         // Power only — any meaningful left aim scrapes the divider and dies in the tube.
         // The top exit hood is what feeds the ball into play.
         const power = Phaser.Math.Linear(40, 52, charge);
+        this.emergencyHits = 0;
+        this.multiballEarnedThisBall = false;
         this.planck.relaunch(SHOOTER_LANE.launchX, SHOOTER_LANE.launchY, power, 0);
         this.syncBallSprites();
         this.author?.clearTrajectory();
@@ -677,10 +648,11 @@ export class ProcurementScene extends Phaser.Scene {
     }
 
     private syncBallSprites() {
+        const inTunnel = this.planck?.isInTunnel() ?? false;
         const balls = this.planck?.getBalls() ?? [];
         this.ballSprites.forEach((sprite, index) => {
             const ball = balls[index];
-            if (!ball) {
+            if (!ball || (inTunnel && index === 0)) {
                 sprite.setVisible(false);
                 return;
             }
@@ -689,8 +661,9 @@ export class ProcurementScene extends Phaser.Scene {
         balls.forEach((_ball, index) => this.ensureBallSprite(index));
         if (this.ballTrail && this.ballSprites[0]) {
             this.ballTrail.startFollow(this.ballSprites[0]);
+            this.ballTrail.setVisible(!inTunnel);
         }
-        const count = balls.length;
+        const count = this.planck?.getActiveBallCount() ?? balls.length;
         this.multiballText.setText(count > 1 ? `MULTIBALL x${count}` : '');
     }
 
@@ -751,8 +724,9 @@ export class ProcurementScene extends Phaser.Scene {
                 if (this.targetBankHits >= bankTotal && this.planck) {
                     this.targetBankHits = 0;
                     this.targetBankText.setText(`TARGET BANK 0/${bankTotal}`);
-                    const spawned = this.planck.spawnExtraBalls(1);
-                    if (spawned > 0) this.statusText.setText('TARGET BANK COMPLETE — BONUS BALL');
+                    // Bonus score only — no free multiball from the bank.
+                    this.statusText.setText('TARGET BANK COMPLETE — SUPPLEMENTAL FILED');
+                    this.cameras.main.flash(100, 120, 200, 160);
                 }
             }
             if (event.type === 'POST_HIT') {
@@ -760,17 +734,45 @@ export class ProcurementScene extends Phaser.Scene {
             }
             if (event.type === 'LANE_HIT') {
                 this.flashLane(event.id);
-                this.statusText.setText(`WIRE LANE — ${event.id ?? 'FLOW'}`);
+                if (event.id === 'cross-wire-cold') {
+                    this.statusText.setText('CROSS-WIRE COLD — HIT A RAMP FIRST');
+                } else {
+                    this.statusText.setText(`WIRE LANE — ${event.id ?? 'FLOW'}`);
+                }
             }
             if (event.type === 'LANE_ENTER') {
                 this.flashLane(event.id);
-                this.statusText.setText(`ENTER ${event.id?.toUpperCase() ?? 'LANE'}`);
-                this.cameras.main.shake(40, 0.002);
+                if (event.id === 'cross-wire-armed') {
+                    this.statusText.setText('CROSS-WIRE LIVE — RIDE RAMP TO RAMP');
+                    this.cameras.main.flash(70, 255, 180, 60);
+                } else if (event.id === 'cross-wire') {
+                    this.statusText.setText('CROSS-WIRE RIDE');
+                    this.cameras.main.shake(40, 0.002);
+                } else if (event.id === 'left-ramp' || event.id === 'right-ramp') {
+                    this.statusText.setText(`${event.id.replace('-', ' ').toUpperCase()} — CLIMB TO THE PURPLE SCOOP`);
+                    this.cameras.main.shake(40, 0.002);
+                } else {
+                    this.statusText.setText(`ENTER ${event.id?.toUpperCase() ?? 'LANE'}`);
+                    this.cameras.main.shake(40, 0.002);
+                }
             }
             if (event.type === 'LANE_EXIT') {
                 this.flashLane(event.id);
                 this.statusText.setText(`EXIT ${event.id?.toUpperCase() ?? 'LANE'} — SCORE PATH`);
-                this.cameras.main.flash(80, 120, 255, 180);
+                // Soft pulse only — full-screen flash on every exit strobes during climb assists.
+                if (event.id === 'cross-wire') {
+                    this.cameras.main.flash(60, 120, 255, 180);
+                }
+            }
+            if (event.type === 'TUNNEL_ENTER') {
+                this.statusText.setText(`TUNNEL ${event.id?.toUpperCase() ?? ''} — BALL IN TRANSIT`);
+                this.cameras.main.flash(60, 200, 100, 255);
+                this.syncBallSprites();
+            }
+            if (event.type === 'TUNNEL_EXIT') {
+                this.statusText.setText(`TUNNEL EXIT — ${event.id?.toUpperCase() ?? 'SPOUT'}`);
+                this.cameras.main.flash(100, 180, 120, 255);
+                this.syncBallSprites();
             }
             if (event.type === 'SKILL_SHOT') {
                 const result = this.contract.recordSkillShot();
@@ -846,11 +848,23 @@ export class ProcurementScene extends Phaser.Scene {
         this.statusText.setText(result.status);
         this.showBumperHit(bumper, result.scaledValue, result.multiplier);
         if (bumper.id.includes('emergency') && this.planck) {
-            const spawned = this.planck.spawnExtraBalls(2);
-            if (spawned > 0) {
-                this.statusText.setText(`EMERGENCY SUPPLEMENTAL — MULTIBALL x${this.planck.getActiveBallCount()}`);
-                this.cameras.main.shake(220, 0.01);
-                this.showAdviser('margin', 'procurement');
+            if (this.multiballEarnedThisBall) {
+                this.statusText.setText('EMERGENCY HIT — MULTIBALL ALREADY ARMED THIS BALL');
+            } else {
+                this.emergencyHits += 1;
+                const need = 3;
+                if (this.emergencyHits < need) {
+                    this.statusText.setText(`EMERGENCY LOCK ${this.emergencyHits}/${need} — KEEP THE SHOT ALIVE`);
+                } else {
+                    this.emergencyHits = 0;
+                    const spawned = this.planck.spawnExtraBalls(1);
+                    if (spawned > 0) {
+                        this.multiballEarnedThisBall = true;
+                        this.statusText.setText(`EMERGENCY SUPPLEMENTAL — MULTIBALL x${this.planck.getActiveBallCount()}`);
+                        this.cameras.main.shake(220, 0.01);
+                        this.showAdviser('margin', 'procurement');
+                    }
+                }
             }
         }
         this.updateHUD();
@@ -873,14 +887,29 @@ export class ProcurementScene extends Phaser.Scene {
 
         const badge = this.bumperSprites.get(bumper.id);
         if (badge) {
-            this.tweens.add({ targets: badge, scale: badge.scale * 1.18, angle: badge.angle + 14, duration: 90, yoyo: true });
+            const base = this.bumperBaseScale.get(bumper.id) ?? badge.scaleX;
+            this.tweens.killTweensOf(badge);
+            badge.setScale(base).setAngle(0);
+            this.tweens.add({
+                targets: badge,
+                scale: base * 1.12,
+                angle: 12,
+                duration: 90,
+                yoyo: true,
+                onComplete: () => badge.setScale(base).setAngle(0)
+            });
         }
         const halo = this.bumperHalos.get(bumper.id);
         if (halo) {
-            halo.setAlpha(0.7).setScale(0.72);
+            this.tweens.killTweensOf(halo);
+            halo.setAlpha(0.55).setScale(1);
             this.tweens.add({
-                targets: halo, alpha: 0.14, scale: 1.65, duration: 300, ease: 'Cubic.out',
-                onComplete: () => halo.setScale(1)
+                targets: halo,
+                alpha: 0.14,
+                scale: 1.35,
+                duration: 280,
+                ease: 'Cubic.out',
+                onComplete: () => halo.setScale(1).setAlpha(0.14)
             });
         }
         this.showHitBurst(bumper.x, bumper.y, bumper.outcome === 'inflate');

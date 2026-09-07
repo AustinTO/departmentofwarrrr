@@ -127,7 +127,7 @@ export class PreloaderScene extends Phaser.Scene {
         this.load.image('pinball_target', 'assets/ui/pinball-target.svg');
         this.load.image('pinball_sling', 'assets/pinball/sling.png');
         this.load.image('pinball_ball', 'assets/pinball/ball.png');
-        this.load.image('pinball_playfield', 'assets/pinball/playfield.png');
+        this.load.image('pinball_playfield', 'assets/pinball/playfield_kit.png');
         this.load.image('pinball_playfield_audit', 'assets/pinball/playfield_audit.png');
         this.load.image('pinball_playfield_stadium', 'assets/pinball/playfield_stadium.png');
         this.load.image('pinball_skill_gate', 'assets/pinball/skill_gate.png');
@@ -136,6 +136,15 @@ export class PreloaderScene extends Phaser.Scene {
         this.load.image('pinball_hit_inflate', 'assets/pinball/hit_inflate.png');
         this.load.image('pinball_hit_efficiency', 'assets/pinball/hit_efficiency.png');
         this.load.image('pinball_contract_card', 'assets/pinball/contract_card.png');
+        this.load.image('pinball_mouth_enter', 'assets/pinball/mouth_enter.png');
+        this.load.image('pinball_mouth_exit', 'assets/pinball/mouth_exit.png');
+        this.load.image('pinball_mouth_tunnel', 'assets/pinball/mouth_tunnel.png');
+        this.load.image('pinball_rail_post', 'assets/pinball/rail_post.png');
+        this.load.image('pinball_wire_post', 'assets/pinball/wire_post.png');
+        this.load.image('pinball_gate_block', 'assets/pinball/gate_block.png');
+        this.load.image('pinball_chrome_rail', 'assets/pinball/chrome_rail.png');
+        this.load.image('pinball_ramp_bed', 'assets/pinball/ramp_bed.png');
+        this.load.image('pinball_wire_cable', 'assets/pinball/wire_cable.png');
 
         this.load.image('weapon_hydra', 'assets/weapons/hydra.png');
         this.load.image('weapon_railgun', 'assets/weapons/railgun.png');

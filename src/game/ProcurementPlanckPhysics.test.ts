@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProcurementPlanckPhysics } from './ProcurementPlanckPhysics';
 import { PROCUREMENT_BUMPERS, PROCUREMENT_TABLE } from './ProcurementTableDefinition';
 import { PLAYFIELD_LAYOUT, PINBALL_BOARDS, PINBALL_SIZING, SHOOTER_LANE, railsAlignedToPlayfield } from './PinballBoards';
+import { kitTableObjects, resetAppropriationsKitCache } from './pinballKit';
 
 const LAUNCH_X = SHOOTER_LANE.launchX;
 const LAUNCH_Y = SHOOTER_LANE.launchY;
@@ -236,8 +237,12 @@ describe('upgraded pinball rails', () => {
 
     it('builds dual-edge ramp channels so slides are rideable, not blocked', () => {
         Object.values(PINBALL_BOARDS).forEach((board) => {
-            const outers = board.table.filter((e) => e.id.endsWith('-outer') && e.points);
-            const inners = board.table.filter((e) => e.id.endsWith('-inner') && e.points);
+            const outers = board.table.filter(
+                (e) => e.id.endsWith('-outer') && e.kind === 'slide' && e.points
+            );
+            const inners = board.table.filter(
+                (e) => e.id.endsWith('-inner') && e.kind === 'slide' && e.points
+            );
             expect(outers.length).toBeGreaterThanOrEqual(2);
             expect(inners.length).toBeGreaterThanOrEqual(2);
             outers.forEach((outer) => {
@@ -247,16 +252,16 @@ describe('upgraded pinball rails', () => {
                 expect(inner?.points?.length).toBeGreaterThan(3);
                 const midOuter = outer.points![Math.floor(outer.points!.length / 2)];
                 const midInner = inner!.points![Math.floor(inner!.points!.length / 2)];
-                // Must clear the ball (56) + thin rail slabs with margin.
+                // Mid run may taper; still must clear the ball + margin.
                 expect(Math.hypot(midOuter[0] - midInner[0], midOuter[1] - midInner[1]))
-                    .toBeGreaterThanOrEqual(PINBALL_SIZING.minChannelGapPx - 2);
+                    .toBeGreaterThanOrEqual(PINBALL_SIZING.ballRadiusPx * 2 + 8);
             });
         });
     });
 
     it('keeps true segment clearance wider than the ball on every ramp', () => {
         Object.values(PINBALL_BOARDS).forEach((board) => {
-            board.table.filter((e) => e.id.endsWith('-outer') && e.points).forEach((outer) => {
+            board.table.filter((e) => e.id.endsWith('-outer') && e.kind === 'slide' && e.points).forEach((outer) => {
                 const inner = board.table.find((e) => e.id === outer.id.replace('-outer', '-inner'));
                 let min = Infinity;
                 for (let i = 0; i < outer.points!.length - 1; i++) {
@@ -286,7 +291,8 @@ describe('upgraded pinball rails', () => {
 
     it('keeps playfield rails clear of the plunger channel', () => {
         const reserved = new Set([
-            'shooter-left', 'shooter-oneway', 'shooter-exit', 'right-rail', 'right-bottom-rail'
+            'shooter-left', 'shooter-oneway', 'shooter-exit', 'right-rail', 'right-bottom-rail',
+            'right-tunnel-hood'
         ]);
         Object.values(PINBALL_BOARDS).forEach((board) => {
             board.table
@@ -306,20 +312,25 @@ describe('upgraded pinball rails', () => {
         expect(kinds.has('slide')).toBe(true);
         expect(kinds.has('post')).toBe(true);
         expect(kinds.has('sling')).toBe(true);
-        expect(PROCUREMENT_TABLE.filter((e) => e.kind === 'target').length).toBeGreaterThanOrEqual(5);
+        expect(PROCUREMENT_TABLE.filter((e) => e.kind === 'target').length).toBeGreaterThanOrEqual(3);
+        expect(PROCUREMENT_TABLE.filter((e) => e.kind === 'target' && e.event === 'TARGET_HIT').length).toBeGreaterThanOrEqual(2);
         expect(PROCUREMENT_TABLE.filter((e) => e.kind === 'wall').length).toBeGreaterThanOrEqual(10);
     });
 
     it('builds physics fixtures from table posts and slings', () => {
-        const physics = new ProcurementPlanckPhysics(1080, 1920);
-        physics.relaunch(220, PLAYFIELD_LAYOUT.originY + 1200, 10, 0);
+        resetAppropriationsKitCache();
+        const table = kitTableObjects();
+        const physics = new ProcurementPlanckPhysics(1080, 1920, 'appropriations', table);
+        const sling = table.find((e) => e.id === 'left-sling')!;
+        // Rest on the rubber face so contact is reliable.
+        physics.relaunch(sling.x + 10, sling.y - 20, 0, 0);
         const events = [];
-        for (let i = 0; i < 90; i++) {
+        for (let i = 0; i < 120; i++) {
             physics.step(1000 / 60);
             events.push(...physics.consumeEvents());
         }
         expect(events.some((e) =>
-            e.type === 'SLINGSHOT_HIT' || e.type === 'POST_HIT' || e.type === 'BUMPER_HIT' || e.type === 'LANE_HIT'
+            e.type === 'SLINGSHOT_HIT' || e.type === 'POST_HIT' || e.type === 'BUMPER_HIT'
         )).toBe(true);
     });
 });

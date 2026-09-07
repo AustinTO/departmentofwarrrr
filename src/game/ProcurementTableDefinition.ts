@@ -30,6 +30,11 @@ export interface TableObject {
     sensor?: SensorRole;
     /** Ramp/channel id this sensor belongs to (e.g. left-ramp). */
     linkId?: string;
+    /**
+     * Collision layer. `overpass` rails sit above the playfield — balls pass
+     * under unless they have mounted the wire at an entrance.
+     */
+    layer?: 'playfield' | 'overpass';
 }
 
 export interface ProcurementBumper {
