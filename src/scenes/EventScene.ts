@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { currentRun } from '../state/RunState';
 import { ProductionSystem } from '../game/ProductionSystem';
+import { WeaponType } from '../game/config';
 
 export class EventScene extends Phaser.Scene {
     constructor() {
@@ -42,9 +43,36 @@ export class EventScene extends Phaser.Scene {
                 title: 'THREAT INFLATION',
                 desc: 'A think tank claims balloons are actually stealth nukes.',
                 choice: 'BUY MORE SM-6s',
-                effect: () => { 
+                effect: () => {
                     const active = currentRun.theaters['active'];
-                    active.inventory['GOD-EYE SM-6 BLOCK IB'] = (active.inventory['GOD-EYE SM-6 BLOCK IB'] || 0) + 10;
+                    active.inventory[WeaponType.INTERCEPTOR_BLOCK_II] =
+                        (active.inventory[WeaponType.INTERCEPTOR_BLOCK_II] || 0) + 10;
+                }
+            },
+            {
+                title: 'MIRV PILOT PROGRAM',
+                desc: 'Industry gifts a Hydra cluster demo loadout "for evaluation".',
+                choice: 'ACCEPT HYDRA',
+                effect: () => {
+                    const active = currentRun.theaters.active;
+                    active.inventory[WeaponType.HYDRA] = (active.inventory[WeaponType.HYDRA] || 0) + 4;
+                    if (!currentRun.unlockedWeapons.includes(WeaponType.HYDRA)) {
+                        currentRun.unlockedWeapons.push(WeaponType.HYDRA);
+                    }
+                    currentRun.syncUnlocks();
+                }
+            },
+            {
+                title: 'RAILGUN EARMARK',
+                desc: 'A senator sneaks electromagnetic kinetic funding into the bill.',
+                choice: 'CHARGE CAPACITORS',
+                effect: () => {
+                    const active = currentRun.theaters.active;
+                    active.inventory[WeaponType.RAILGUN] = (active.inventory[WeaponType.RAILGUN] || 0) + 8;
+                    if (!currentRun.unlockedWeapons.includes(WeaponType.RAILGUN)) {
+                        currentRun.unlockedWeapons.push(WeaponType.RAILGUN);
+                    }
+                    currentRun.syncUnlocks();
                 }
             }
         ];
@@ -72,7 +100,7 @@ export class EventScene extends Phaser.Scene {
                 currentRun.save();
                 this.scene.start('PressReleaseScene');
             });
-        
+
         this.add.text(width / 2, height / 2 + 200, event.choice, { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5);
     }
 }

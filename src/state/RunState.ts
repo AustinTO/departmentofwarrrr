@@ -1,5 +1,8 @@
-import { WeaponType } from '../game/config';
+import { WeaponType, STARTER_WEAPONS, WEAPON_CONFIGS, isWeaponUnlocked } from '../game/config';
 import type { Doctrine } from '../game/config';
+import type { EstateRecord } from '../data/mansions';
+import type { PinballBoardId } from '../game/PinballBoards';
+import { isBoardUnlocked, PINBALL_BOARD_ORDER } from '../game/PinballBoards';
 
 export interface TheaterState {
     id: string;
@@ -22,15 +25,24 @@ export class RunState {
     public executiveWealth: number = 0;
     public mansionsBuilt: number = 0;
     public activeDoctrine: Doctrine | null = null;
-    
+    /** Persistent McLean estate ledger — one record per mansion built. */
+    public estateLedger: EstateRecord[] = [];
+    /** Explicit unlock grants (also auto-unlocked by FY / mansions). */
+    public unlockedWeapons: WeaponType[] = [...STARTER_WEAPONS];
+    public unlockedBoards: PinballBoardId[] = ['appropriations'];
+    public selectedBoard: PinballBoardId = 'appropriations';
+
     public theaters: Record<string, TheaterState> = {
         'active': {
             id: 'active',
             name: 'Active Operation',
             readiness: 100,
             inventory: {
-                [WeaponType.INTERCEPTOR]: 40,
-                [WeaponType.INTERCEPTOR_BLOCK_II]: 5
+                [WeaponType.INTERCEPTOR]: 55,
+                [WeaponType.INTERCEPTOR_BLOCK_II]: 8,
+                [WeaponType.HYDRA]: 0,
+                [WeaponType.RAILGUN]: 0,
+                [WeaponType.SEEKER]: 0
             }
         },
         'indo_pacific': {
@@ -39,7 +51,10 @@ export class RunState {
             readiness: 100,
             inventory: {
                 [WeaponType.INTERCEPTOR]: 120,
-                [WeaponType.INTERCEPTOR_BLOCK_II]: 20
+                [WeaponType.INTERCEPTOR_BLOCK_II]: 20,
+                [WeaponType.HYDRA]: 4,
+                [WeaponType.RAILGUN]: 6,
+                [WeaponType.SEEKER]: 3
             }
         },
         'europe': {
@@ -48,7 +63,10 @@ export class RunState {
             readiness: 100,
             inventory: {
                 [WeaponType.INTERCEPTOR]: 80,
-                [WeaponType.INTERCEPTOR_BLOCK_II]: 10
+                [WeaponType.INTERCEPTOR_BLOCK_II]: 10,
+                [WeaponType.HYDRA]: 2,
+                [WeaponType.RAILGUN]: 4,
+                [WeaponType.SEEKER]: 2
             }
         },
         'homeland': {
@@ -57,7 +75,10 @@ export class RunState {
             readiness: 100,
             inventory: {
                 [WeaponType.INTERCEPTOR]: 50,
-                [WeaponType.INTERCEPTOR_BLOCK_II]: 5
+                [WeaponType.INTERCEPTOR_BLOCK_II]: 5,
+                [WeaponType.HYDRA]: 1,
+                [WeaponType.RAILGUN]: 2,
+                [WeaponType.SEEKER]: 1
             }
         },
         'reserve': {
@@ -66,12 +87,64 @@ export class RunState {
             readiness: 100,
             inventory: {
                 [WeaponType.INTERCEPTOR]: 200,
-                [WeaponType.INTERCEPTOR_BLOCK_II]: 50
+                [WeaponType.INTERCEPTOR_BLOCK_II]: 50,
+                [WeaponType.HYDRA]: 10,
+                [WeaponType.RAILGUN]: 15,
+                [WeaponType.SEEKER]: 8
             }
         }
     };
 
     public productionQueue: DeliveryBatch[] = [];
+
+    /** True when a campaign has progress worth continuing from the title screen. */
+    public hasProgress(): boolean {
+        return this.currentFY > 2026
+            || this.taxpayerBurn > 0
+            || this.contractorProfit > 0
+            || this.mansionsBuilt > 0
+            || this.productionQueue.length > 0;
+    }
+
+    /** Refresh unlock lists from FY / mansion thresholds. Returns newly unlocked weapon names. */
+    public syncUnlocks(): { weapons: WeaponType[]; boards: PinballBoardId[] } {
+        const newWeapons: WeaponType[] = [];
+        const newBoards: PinballBoardId[] = [];
+        (Object.values(WeaponType) as WeaponType[]).forEach((type) => {
+            if (isWeaponUnlocked(type, this.currentFY, this.mansionsBuilt, this.unlockedWeapons)
+                && !this.unlockedWeapons.includes(type)) {
+                this.unlockedWeapons.push(type);
+                newWeapons.push(type);
+                // Seed a starter clip into active theater when first unlocked.
+                const active = this.theaters.active;
+                if ((active.inventory[type] || 0) <= 0 && WEAPON_CONFIGS[type].limitedAmmo) {
+                    active.inventory[type] = type === WeaponType.HYDRA ? 6
+                        : type === WeaponType.RAILGUN ? 10
+                            : type === WeaponType.SEEKER ? 5 : 4;
+                }
+            }
+        });
+        PINBALL_BOARD_ORDER.forEach((id) => {
+            if (isBoardUnlocked(id, this.currentFY, this.mansionsBuilt, this.unlockedBoards)
+                && !this.unlockedBoards.includes(id)) {
+                this.unlockedBoards.push(id);
+                newBoards.push(id);
+            }
+        });
+        return { weapons: newWeapons, boards: newBoards };
+    }
+
+    public availableWeapons(): WeaponType[] {
+        this.syncUnlocks();
+        return (Object.values(WeaponType) as WeaponType[])
+            .filter((type) => isWeaponUnlocked(type, this.currentFY, this.mansionsBuilt, this.unlockedWeapons));
+    }
+
+    public availableBoards(): PinballBoardId[] {
+        this.syncUnlocks();
+        return PINBALL_BOARD_ORDER.filter((id) =>
+            isBoardUnlocked(id, this.currentFY, this.mansionsBuilt, this.unlockedBoards));
+    }
 
     /** Mansion prices escalate so each new expansion takes another good year of bad decisions. */
     public reconcileMansions() {
@@ -80,12 +153,11 @@ export class RunState {
             this.mansionsBuilt++;
             nextCost = this.mansionCost(this.mansionsBuilt);
         }
+        this.syncUnlocks();
     }
 
     public mansionCost(index: number = this.mansionsBuilt): number {
-        // Mansions are a late-game visual score. Procurement money moves in
-        // billions, so a single suburban house must not exhaust the map.
-        return Math.round(8_000_000_000 * Math.pow(1.28, index));
+        return Math.round(2_000_000_000 * Math.pow(1.22, index));
     }
 
     /** Return the campaign to a clean, playable first-year state. */
@@ -97,6 +169,10 @@ export class RunState {
         this.executiveWealth = 0;
         this.mansionsBuilt = 0;
         this.activeDoctrine = null;
+        this.estateLedger = [];
+        this.unlockedWeapons = [...STARTER_WEAPONS];
+        this.unlockedBoards = ['appropriations'];
+        this.selectedBoard = 'appropriations';
         this.productionQueue = [];
         this.theaters = new RunState().theaters;
     }
@@ -136,6 +212,10 @@ export class RunState {
             executiveWealth: this.executiveWealth,
             mansionsBuilt: this.mansionsBuilt,
             activeDoctrine: this.activeDoctrine,
+            estateLedger: this.estateLedger,
+            unlockedWeapons: this.unlockedWeapons,
+            unlockedBoards: this.unlockedBoards,
+            selectedBoard: this.selectedBoard,
             theaters: this.theaters,
             productionQueue: this.productionQueue
         };
@@ -154,7 +234,12 @@ export class RunState {
             if (typeof data.executiveWealth === 'number') this.executiveWealth = data.executiveWealth;
             if (typeof data.mansionsBuilt === 'number') this.mansionsBuilt = data.mansionsBuilt;
             if (data.activeDoctrine) this.activeDoctrine = data.activeDoctrine;
+            if (Array.isArray(data.estateLedger)) this.estateLedger = data.estateLedger;
+            if (Array.isArray(data.unlockedWeapons)) this.unlockedWeapons = data.unlockedWeapons as WeaponType[];
+            if (Array.isArray(data.unlockedBoards)) this.unlockedBoards = data.unlockedBoards as PinballBoardId[];
+            if (typeof data.selectedBoard === 'string') this.selectedBoard = data.selectedBoard as PinballBoardId;
             if (Array.isArray(data.productionQueue)) this.productionQueue = data.productionQueue;
+            this.syncUnlocks();
 
             // Merge saved theaters into the defaults so an older save cannot remove a theater.
             if (data.theaters) {

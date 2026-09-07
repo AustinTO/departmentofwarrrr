@@ -63,7 +63,7 @@ export const CHARACTERS: Record<string, Character> = {
         portraitKey: 'avery_audit',
         color: '#ff9b9b',
         lines: {
-            combat: ['This is not what "proportional" means.', 'I will need to see every receipt.'],
+            combat: ['This is not what "proportional" means.', 'I will need to see every receipt.', 'That was an allied contact. Start writing your apology.'],
             procurement: ['An audit is not a challenge. It is a paperwork ambush.', 'Please stop calling it an innovation surcharge.']
         }
     }

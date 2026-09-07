@@ -1,307 +1,566 @@
 import * as Phaser from 'phaser';
 import { currentRun } from '../state/RunState';
-import type { DeliveryBatch } from '../state/RunState';
-import { WeaponType } from '../game/config';
 import { CHARACTERS, characterLine } from '../game/Characters';
 import { ProcurementPlanckPhysics } from '../game/ProcurementPlanckPhysics';
-import { PROCUREMENT_BUMPERS } from '../game/ProcurementTableDefinition';
 import type { ProcurementBumper } from '../game/ProcurementTableDefinition';
+import { PINBALL_BOARDS, PINBALL_SIZING, PLAYFIELD_LAYOUT, SHOOTER_LANE, countDropTargets, skillGateFromTable, flipperFromTable, type PinballBoardId } from '../game/PinballBoards';
+import type { TableObject } from '../game/ProcurementTableDefinition';
+import { ProcurementSystem } from '../game/ProcurementSystem';
+import { PauseMenu } from '../ui/PauseMenu';
+import { ContractCard } from '../ui/ContractCard';
+import { TableAuthorOverlay } from '../ui/TableAuthorOverlay';
+import { isAuthorHashEnabled, resolveBoardTable } from '../game/TableAuthorStore';
+import { audioManager } from '../managers/AudioManager';
+import { SHEETS } from '../game/Sprites';
 
 type FlipperSide = 'left' | 'right';
 
-interface Rail {
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-}
+/** When true, next ProcurementScene create shows the board picker even if a board is already selected. */
+let forceBoardPicker = false;
 
-interface Obstacle {
-    x: number;
-    y: number;
-    radius: number;
-    label: string;
-    color: number;
-}
-
-interface Slide {
-    name: string;
-    width: number;
-    points: Array<{ x: number; y: number }>;
-    color: number;
-}
-
-/** A deterministic touch-first pinball minigame that avoids a second physics plugin. */
+/** Touch-first procurement pinball: Planck physics, painted board, contract satire. */
 export class ProcurementScene extends Phaser.Scene {
-    private ball?: Phaser.GameObjects.Image;
-    private ballVelocity = new Phaser.Math.Vector2();
-    private procurementList: Partial<Record<WeaponType, number>> = {};
-    private leadTimeDelay = 0;
-    private score = 0;
+    private ballSprites: Phaser.GameObjects.Image[] = [];
+    private contract = new ProcurementSystem();
     private valueText!: Phaser.GameObjects.Text;
     private delayText!: Phaser.GameObjects.Text;
     private profitText!: Phaser.GameObjects.Text;
     private statusText!: Phaser.GameObjects.Text;
     private authorizeButton!: Phaser.GameObjects.Rectangle;
     private bumpers: readonly ProcurementBumper[] = [];
-    private lastBumperHit = new Map<string, number>();
+    private bumperSprites = new Map<string, Phaser.GameObjects.Image>();
+    private bumperHalos = new Map<string, Phaser.GameObjects.Arc>();
+    private slingSprites = new Map<string, Phaser.GameObjects.Image>();
+    private targetSprites = new Map<string, Phaser.GameObjects.Image>();
+    private postSprites = new Map<string, Phaser.GameObjects.Arc>();
+    private laneGlows = new Map<string, Phaser.GameObjects.Graphics>();
     private leftFlipper!: Phaser.GameObjects.Container;
     private rightFlipper!: Phaser.GameObjects.Container;
-    private flipperPulse: Record<FlipperSide, number> = { left: 0, right: 0 };
+    private flipperHeld: Record<FlipperSide, Set<number>> = { left: new Set(), right: new Set() };
     private plunger?: Phaser.GameObjects.Image;
     private plungerPull = 0;
     private plungerDragging = false;
     private contractAuthorized = false;
-    private rails: Rail[] = [];
-    private obstacles: Obstacle[] = [];
-    private slides: Slide[] = [];
-    private slideCooldown = new Map<string, number>();
-    private returnLaneCooldown = new Map<FlipperSide, number>();
-    private bumperHits = 0;
-    private launchAge = 0;
     private spaceCharging = false;
     private launchChargeStartedAt = 0;
-    private combo = 0;
-    private comboExpiresAt = 0;
     private comboText!: Phaser.GameObjects.Text;
+    private multiballText!: Phaser.GameObjects.Text;
+    private phaseText!: Phaser.GameObjects.Text;
+    private skillLane!: Phaser.GameObjects.Image;
+    private skillArmedRing?: Phaser.GameObjects.Arc;
+    private targetBankText!: Phaser.GameObjects.Text;
+    private targetBankHits = 0;
     private adviserPortrait!: Phaser.GameObjects.Image;
     private adviserName!: Phaser.GameObjects.Text;
     private adviserLine!: Phaser.GameObjects.Text;
     private planck?: ProcurementPlanckPhysics;
-
-    private readonly flipperY = 1660;
-    private readonly flipperLength = 190;
-    private readonly ballRadius = 19;
-    private readonly maxBumperHitsPerBall = 12;
+    private paused = false;
+    private pauseMenu?: PauseMenu;
+    private showingCard = false;
+    private ballTrail?: Phaser.GameObjects.Particles.ParticleEmitter;
+    private boardId: PinballBoardId = 'appropriations';
+    private flipperY = PLAYFIELD_LAYOUT.originY + 1420;
+    private readonly ballRadius = PINBALL_SIZING.ballRadiusPx;
+    private workingTable: TableObject[] = [];
+    private railGraphics?: Phaser.GameObjects.Graphics;
+    private author?: TableAuthorOverlay;
+    private authorEnabled = false;
 
     constructor() {
         super('ProcurementScene');
     }
 
-    init() {
-        // A later fiscal year can revisit this scene on the same Phaser scene
-        // instance. Never carry a prior year's drained/authorized state into
-        // the next procurement table.
-        this.ball = undefined;
-        this.procurementList = {};
-        this.leadTimeDelay = 0;
-        this.score = 0;
+    init(_data?: { skipPicker?: boolean }) {
+        this.ballSprites = [];
+        this.contract.reset();
         this.contractAuthorized = false;
         this.planck = undefined;
         this.plungerPull = 0;
         this.plungerDragging = false;
-        this.flipperPulse = { left: 0, right: 0 };
-        this.lastBumperHit.clear();
-        this.slideCooldown.clear();
-        this.returnLaneCooldown.clear();
-        this.combo = 0;
-        this.comboExpiresAt = 0;
+        this.flipperHeld = { left: new Set(), right: new Set() };
+        this.paused = false;
+        this.pauseMenu = undefined;
+        this.showingCard = false;
+        this.targetBankHits = 0;
+        this.bumperSprites.clear();
+        this.bumperHalos.clear();
+        this.slingSprites.clear();
+        this.targetSprites.clear();
+        this.postSprites.clear();
+        this.laneGlows.clear();
+        this.author?.destroy();
+        this.author = undefined;
+        this.railGraphics = undefined;
+        this.authorEnabled = isAuthorHashEnabled();
+        currentRun.syncUnlocks();
+        this.boardId = currentRun.selectedBoard;
     }
 
     create() {
         this.input.enabled = true;
         this.events.on('wake', () => { this.input.enabled = true; });
         const { width, height } = this.scale;
-        this.createBoardShell(width, height);
-        this.add.rectangle(0, 0, width, 430, 0x02070d, 0.72).setOrigin(0);
-        this.createHud(width);
-        this.createBumpers(width);
-        this.createRails(width);
-        this.createFlippers(width);
-        this.createControls(width, height);
-        this.planck = new ProcurementPlanckPhysics(width, height);
-        this.ball = this.add.image(width - 135, 1605, 'pinball_ball').setDisplaySize(this.ballRadius * 2, this.ballRadius * 2).setDepth(8);
-        this.showAdviser('peter', 'procurement');
+        const unlocked = currentRun.availableBoards();
+        if (!unlocked.includes(this.boardId)) {
+            this.boardId = unlocked[0] ?? 'appropriations';
+            currentRun.selectedBoard = this.boardId;
+        }
+
+        if (forceBoardPicker && unlocked.length > 1) {
+            forceBoardPicker = false;
+            this.showBoardPicker(width, height, unlocked);
+            return;
+        }
+        forceBoardPicker = false;
+        this.startBoard(this.boardId);
     }
 
-    /** The table is layered in Phaser so art, input, and collision guides stay aligned. */
-    private createBoardShell(width: number, height: number) {
-        this.add.rectangle(width / 2, height / 2, width, height, 0x07121e);
-        this.add.rectangle(width / 2, height / 2 + 130, width - 54, height - 160, 0x102f3e)
-            .setStrokeStyle(8, 0x5de6ff, 0.8);
-        this.add.rectangle(width / 2, height / 2 + 130, width - 88, height - 194, 0x071b28)
-            .setStrokeStyle(3, 0x254f63, 0.9);
-
-        const lines = this.add.graphics();
-        lines.lineStyle(2, 0x2e7188, 0.45);
-        for (let y = 470; y < height - 220; y += 150) lines.lineBetween(80, y, width - 80, y);
-        lines.lineStyle(4, 0xff3d45, 0.7);
-        lines.lineBetween(118, 460, 118, 1515);
-        lines.lineBetween(width - 118, 460, width - 118, 1515);
-        lines.lineStyle(4, 0x5de6ff, 0.75);
-        lines.lineBetween(185, 1140, 185, 1510);
-        lines.lineBetween(width - 185, 1140, width - 185, 1510);
-
-        this.add.text(width / 2, 455, 'APPROPRIATIONS TABLE • KEEP THE REQUIREMENT IN PLAY', {
-            fontSize: '16px', color: '#6fcbe7', fontStyle: 'bold'
+    private showBoardPicker(width: number, height: number, boards: PinballBoardId[]) {
+        this.add.rectangle(width / 2, height / 2, width, height, 0x061018, 0.96);
+        this.add.text(width / 2, 160, 'SELECT PROCUREMENT BOARD', {
+            fontSize: '42px', color: '#f3ca67', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
         }).setOrigin(0.5);
+        this.add.text(width / 2, 220, 'New tables unlock as the campaign escalates.', {
+            fontSize: '22px', color: '#9bcbd4'
+        }).setOrigin(0.5);
+
+        boards.forEach((id, index) => {
+            const board = PINBALL_BOARDS[id];
+            const y = 360 + index * 220;
+            this.add.rectangle(width / 2, y, width - 120, 180, 0x0d2433, 0.95)
+                .setStrokeStyle(4, board.accent)
+                .setInteractive({ useHandCursor: true })
+                .on('pointerdown', () => {
+                    currentRun.selectedBoard = id;
+                    currentRun.save();
+                    this.scene.restart();
+                });
+            this.add.image(180, y, board.playfieldKey).setDisplaySize(140, 150);
+            this.add.text(300, y - 36, board.name, {
+                fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
+            });
+            this.add.text(300, y + 12, board.subtitle, {
+                fontSize: '20px', color: '#9bcbd4', wordWrap: { width: width - 380 }
+            });
+        });
+    }
+
+    private startBoard(boardId: PinballBoardId) {
+        this.boardId = boardId;
+        this.workingTable = resolveBoardTable(boardId);
+        const { width, height } = this.scale;
+        this.createBoardShell(width, height);
+        this.createRails();
+        this.createTableHardware();
+        this.add.rectangle(0, 0, width, 430, 0x02070d, 0.78).setOrigin(0);
+        this.createHud(width);
+        this.setPhase('01 LOAD', '#9bcbd4');
+        this.createBumpers(width);
+        this.createFlippers(width);
+        this.createControls(width, height);
+        this.planck = new ProcurementPlanckPhysics(width, height, this.boardId, this.workingTable);
+        this.ensureBallSprite(0).setPosition(SHOOTER_LANE.readyX, SHOOTER_LANE.readyY).setVisible(true);
+        this.createBallTrail();
+        this.showAdviser('peter', 'procurement');
+
+        this.add.rectangle(90, 48, 120, 60, 0x2a3a4a, 0.95)
+            .setStrokeStyle(3, 0xffd166)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => this.togglePause());
+        this.add.text(90, 48, 'PAUSE', { fontSize: '22px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.addBoardChangeButton(width);
+        this.setupAuthorMode();
+    }
+
+    private setupAuthorMode() {
+        this.input.keyboard?.on('keydown-BACKTICK', () => this.toggleAuthorMode());
+        this.input.keyboard?.on('keydown-F1', () => this.toggleAuthorMode());
+        this.input.keyboard?.on('keydown-T', () => {
+            if (this.author) this.resetBallToPlunger();
+        });
+        this.input.keyboard?.on('keydown-HOME', () => {
+            if (this.author) this.resetBallToPlunger();
+        });
+        if (!this.authorEnabled) return;
+        this.author = new TableAuthorOverlay(
+            this,
+            this.boardId,
+            this.workingTable,
+            (table) => this.rebuildFromAuthor(table),
+            () => this.resetBallToPlunger()
+        );
+        this.statusText.setText('AUTHOR MODE — Del deletes • T resets ball • Ctrl+S saves');
+    }
+
+    private toggleAuthorMode() {
+        if (this.author) {
+            const next = !this.author.isEnabled();
+            this.author.setEnabled(next);
+            this.authorEnabled = next;
+            this.statusText.setText(next ? 'AUTHOR MODE ON — Del deletes • T resets ball' : 'AUTHOR MODE OFF');
+            return;
+        }
+        this.authorEnabled = true;
+        this.author = new TableAuthorOverlay(
+            this,
+            this.boardId,
+            this.workingTable,
+            (table) => this.rebuildFromAuthor(table),
+            () => this.resetBallToPlunger()
+        );
+        this.statusText.setText('AUTHOR MODE ON — Del deletes • T / Home resets ball');
+    }
+
+    private resetBallToPlunger() {
+        if (!this.planck) return;
+        this.planck.parkInShooter();
+        this.ensureBallSprite(0).setPosition(SHOOTER_LANE.readyX, SHOOTER_LANE.readyY).setVisible(true);
+        this.syncBallSprites();
+        this.author?.clearTrajectory();
+        this.pulseSkillArmed(false);
+        this.skillLane?.setTexture('pinball_lane_off');
+        this.statusText.setText('BALL RESET — pull the plunger');
+        this.setPhase('01 READY', '#7dff9a');
+    }
+
+    private rebuildFromAuthor(table: TableObject[]) {
+        this.workingTable = table.map((e) => ({
+            ...e,
+            points: e.points?.map(([x, y]) => [x, y] as [number, number])
+        }));
+        const { width, height } = this.scale;
+        this.planck = new ProcurementPlanckPhysics(width, height, this.boardId, this.workingTable);
+        this.redrawRails();
+        // Always park after geometry edits — weak mid-air relaunches were jamming the ball.
+        this.resetBallToPlunger();
+        this.author?.clearTrajectory();
+    }
+
+    private addBoardChangeButton(width: number) {
+        if (currentRun.availableBoards().length <= 1) return;
+        this.add.rectangle(width - 120, 48, 200, 60, 0x2a3a4a, 0.95)
+            .setStrokeStyle(3, PINBALL_BOARDS[this.boardId].accent)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                forceBoardPicker = true;
+                this.scene.restart();
+            });
+        this.add.text(width - 120, 48, 'CHANGE BOARD', {
+            fontSize: '18px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5);
+    }
+
+    private createBoardShell(width: number, height: number) {
+        const board = PINBALL_BOARDS[this.boardId];
+        // 1:1 art placement — rails are authored in the same coordinate space.
+        this.add.image(
+            PLAYFIELD_LAYOUT.originX + PLAYFIELD_LAYOUT.artWidth / 2,
+            PLAYFIELD_LAYOUT.originY + PLAYFIELD_LAYOUT.artHeight / 2,
+            board.playfieldKey
+        )
+            .setDisplaySize(PLAYFIELD_LAYOUT.artWidth, PLAYFIELD_LAYOUT.artHeight)
+            .setAlpha(0.96)
+            .setDepth(0);
+        this.add.rectangle(width / 2, PLAYFIELD_LAYOUT.centerY, width - 40, PLAYFIELD_LAYOUT.artHeight + 20, 0x071b28, 0.12)
+            .setStrokeStyle(6, board.accent, 0.35)
+            .setDepth(1);
+        this.createCabinetLights(width, height);
+
+        const skill = skillGateFromTable(this.workingTable);
+        const skillX = skill?.x ?? width / 2;
+        const skillY = skill?.y ?? PLAYFIELD_LAYOUT.originY + 180;
+        const skillW = Math.max(220, (skill?.width ?? 170) * 1.55);
+        this.skillLane = this.add.image(skillX, skillY, 'pinball_skill_gate')
+            .setDisplaySize(skillW, 88)
+            .setDepth(5);
+        this.skillArmedRing = this.add.circle(skillX, skillY, Math.max(80, skillW * 0.36), board.accent, 0)
+            .setStrokeStyle(4, board.accent, 0.0)
+            .setDepth(4);
+        this.add.text(skillX, skillY - 44, 'SKILL SHOT', {
+            fontSize: '16px', color: '#ffd166', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(6);
+        this.add.text(width / 2, 438, board.subtitle.toUpperCase(), {
+            fontSize: '15px', color: '#9bcbd4', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(20);
+    }
+
+    /**
+     * Thin collision outlines only — painted ramps in the art stay the visual rails.
+     * Overlay must sit exactly on physics polylines.
+     */
+    private createRails() {
+        this.redrawRails();
+    }
+
+    private redrawRails() {
+        this.railGraphics?.destroy();
+        this.laneGlows.forEach((g) => g.destroy());
+        this.laneGlows.clear();
+        const accent = PINBALL_BOARDS[this.boardId].accent;
+        const table = this.workingTable;
+        const outline = this.add.graphics().setDepth(3);
+        this.railGraphics = outline;
+
+        const strokePoly = (
+            points: Array<[number, number]>,
+            width: number,
+            color: number,
+            alpha: number
+        ) => {
+            outline.lineStyle(width, color, alpha);
+            outline.beginPath();
+            outline.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) outline.lineTo(points[i][0], points[i][1]);
+            outline.strokePath();
+        };
+
+        table.forEach((entry) => {
+            if ((entry.kind !== 'wall' && entry.kind !== 'slide') || !entry.points || entry.points.length < 2) return;
+            const isSlide = entry.kind === 'slide';
+            strokePoly(entry.points, isSlide ? 14 : 11, accent, isSlide ? 0.22 : 0.16);
+            strokePoly(entry.points, isSlide ? 4 : 3, 0xffffff, 0.28);
+
+            if (isSlide) {
+                const lane = this.add.graphics().setDepth(4).setAlpha(0.12);
+                lane.lineStyle(12, accent, 1);
+                lane.beginPath();
+                lane.moveTo(entry.points[0][0], entry.points[0][1]);
+                for (let i = 1; i < entry.points.length; i++) {
+                    lane.lineTo(entry.points[i][0], entry.points[i][1]);
+                }
+                lane.strokePath();
+                this.laneGlows.set(entry.id, lane);
+            }
+        });
+        this.author?.redraw();
+    }
+
+    /** Posts, slings, drop targets — interactive hardware matching Planck fixtures. */
+    private createTableHardware() {
+        const table = this.workingTable;
+        table.forEach((entry) => {
+            if (entry.kind === 'sling') this.createSlingVisual(entry);
+            if (entry.kind === 'post') this.createPostVisual(entry);
+            if (entry.kind === 'target' && entry.event !== 'SKILL_SHOT') this.createTargetVisual(entry);
+        });
+        const bankTotal = countDropTargets(table);
+        const skill = skillGateFromTable(table);
+        const bankY = (skill?.y ?? 500) + 270;
+        this.targetBankText = this.add.text(this.scale.width / 2, bankY, `TARGET BANK 0/${bankTotal}`, {
+            fontSize: '18px', color: '#9bcbd4', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(7);
+    }
+
+    private createSlingVisual(entry: TableObject) {
+        const sprite = this.add.image(entry.x, entry.y, 'pinball_sling')
+            .setDisplaySize((entry.width ?? 120) * 1.15, (entry.height ?? 28) * 3.2)
+            .setRotation(entry.angle ?? 0)
+            .setDepth(6);
+        if ((entry.angle ?? 0) < 0) sprite.setFlipX(true);
+        this.slingSprites.set(entry.id, sprite);
+    }
+
+    private createPostVisual(entry: TableObject) {
+        const r = entry.radius ?? 14;
+        const rubber = this.add.circle(entry.x, entry.y, r + 4, 0x1a2430, 0.95)
+            .setStrokeStyle(3, 0xd7ecff, 0.95)
+            .setDepth(6);
+        this.add.circle(entry.x, entry.y, r * 0.45, PINBALL_BOARDS[this.boardId].accent, 0.75).setDepth(7);
+        this.postSprites.set(entry.id, rubber);
+    }
+
+    private createTargetVisual(entry: TableObject) {
+        const sprite = this.add.image(entry.x, entry.y, 'pinball_target')
+            .setDisplaySize(entry.width ?? 64, (entry.height ?? 28) * 1.4)
+            .setDepth(6)
+            .setTint(0xffd166);
+        this.targetSprites.set(entry.id, sprite);
+    }
+
+    private createCabinetLights(width: number, height: number) {
+        const lights: Phaser.GameObjects.Arc[] = [];
+        for (let y = 520; y < height - 250; y += 104) {
+            [42, width - 42].forEach((x, index) => {
+                const light = this.add.circle(x, y, 7, index === 0 ? 0x5de6ff : 0xffd166, 0.72)
+                    .setBlendMode(Phaser.BlendModes.ADD)
+                    .setDepth(4);
+                lights.push(light);
+            });
+        }
+        lights.forEach((light, index) => {
+            this.tweens.add({
+                targets: light, alpha: 0.16, scale: 1.85, duration: 480,
+                delay: index * 90, yoyo: true, repeat: -1, ease: 'Sine.inOut'
+            });
+        });
     }
 
     private createHud(width: number) {
-        this.add.text(width / 2, 42, 'PROCUREMENT PINBALL', {
-            fontSize: '46px', color: '#f3ca67', fontStyle: 'bold', stroke: '#000000', strokeThickness: 7
+        this.add.image(width / 2, 210, SHEETS.uiChrome.key, 1)
+            .setDisplaySize(1000, 300)
+            .setAlpha(0.55);
+
+        this.add.text(width / 2, 42, PINBALL_BOARDS[this.boardId].name, {
+            fontSize: '40px', color: '#f3ca67', fontStyle: 'bold', stroke: '#000000', strokeThickness: 7
         }).setOrigin(0.5);
         this.profitText = this.add.text(42, 95, '', { fontSize: '24px', color: '#9fffa6', wordWrap: { width: 310 } });
         this.valueText = this.add.text(42, 138, '', { fontSize: '22px', color: '#ffffff', wordWrap: { width: 310 } });
-        this.delayText = this.add.text(width - 42, 95, '', { fontSize: '22px', color: '#ffd47c', align: 'right', wordWrap: { width: 310 } }).setOrigin(1, 0);
-        this.statusText = this.add.text(width / 2, 405, 'LAUNCH A REQUIREMENT TO START A CONTRACT', {
+        this.delayText = this.add.text(width - 42, 95, '', {
+            fontSize: '22px', color: '#ffd47c', align: 'right', wordWrap: { width: 310 }
+        }).setOrigin(1, 0);
+        this.statusText = this.add.text(width / 2, 405, 'PULL THE PLUNGER — INFLATE THE REQUIREMENT', {
             fontSize: '20px', color: '#a7dfff', fontStyle: 'bold', align: 'center'
+        }).setOrigin(0.5);
+        this.phaseText = this.add.text(width / 2, 428, '01 LOAD  •  02 PLAY  •  03 REVIEW  •  04 AUTHORIZE', {
+            fontSize: '14px', color: '#6d9eae', fontStyle: 'bold', letterSpacing: 1
         }).setOrigin(0.5);
         this.comboText = this.add.text(width - 42, 178, 'INFLATION COMBO x1', {
             fontSize: '22px', color: '#ffd47c', fontStyle: 'bold'
         }).setOrigin(1, 0);
+        this.multiballText = this.add.text(width / 2, 178, '', {
+            fontSize: '22px', color: '#ff765e', fontStyle: 'bold'
+        }).setOrigin(0.5);
 
-        // The secretary sits in the centered chairman's chair above the board.
         this.add.rectangle(width / 2, 284, 160, 154, 0x321d16, 0.96).setStrokeStyle(6, 0xb98745);
         this.add.rectangle(width / 2, 357, 210, 28, 0x1d1110, 0.98).setStrokeStyle(3, 0xb98745);
-        this.adviserPortrait = this.add.image(width / 2, 348, CHARACTERS.peter.portraitKey).setDisplaySize(122, 154).setOrigin(0.5, 1);
-        this.adviserName = this.add.text(width / 2, 366, '', { fontSize: '17px', fontStyle: 'bold', color: '#f3ca67', align: 'center' }).setOrigin(0.5);
-        this.adviserLine = this.add.text(width / 2, 385, '', { fontSize: '15px', color: '#eaf6ff', align: 'center', wordWrap: { width: 560 }, lineSpacing: 2 }).setOrigin(0.5, 0);
+        this.adviserPortrait = this.add.image(width / 2, 348, CHARACTERS.peter.portraitKey)
+            .setDisplaySize(122, 154).setOrigin(0.5, 1);
+        this.adviserName = this.add.text(width / 2, 366, '', {
+            fontSize: '17px', fontStyle: 'bold', color: '#f3ca67', align: 'center'
+        }).setOrigin(0.5);
+        this.adviserLine = this.add.text(width / 2, 385, '', {
+            fontSize: '15px', color: '#eaf6ff', align: 'center', wordWrap: { width: 560 }, lineSpacing: 2
+        }).setOrigin(0.5, 0);
         this.updateHUD();
     }
 
     private createBumpers(width: number) {
-        this.bumpers = PROCUREMENT_BUMPERS;
-
+        this.bumpers = PINBALL_BOARDS[this.boardId].bumpers;
         this.bumpers.forEach((bumper) => {
-            this.add.image(bumper.x, bumper.y, 'pinball_bumper').setDisplaySize(bumper.radius * 2, bumper.radius * 2).setTint(bumper.color);
-            this.add.text(bumper.x, bumper.y, bumper.label, {
-                fontSize: bumper.radius > 60 ? '22px' : '14px', color: '#fff4c9', fontStyle: 'bold', align: 'center', stroke: '#000000', strokeThickness: 3
-            }).setOrigin(0.5);
+            const halo = this.add.circle(bumper.x, bumper.y, bumper.radius * 1.42, bumper.outcome === 'inflate' ? 0xffc24d : 0x7dff9d, 0.14)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setDepth(5);
+            this.bumperHalos.set(bumper.id, halo);
+            const badge = this.add.image(bumper.x, bumper.y, 'sheet_pinball_bumpers', bumper.badgeFrame)
+                .setDisplaySize(bumper.radius * 2.35, bumper.radius * 2.35)
+                .setDepth(6);
+            this.bumperSprites.set(bumper.id, badge);
+            this.add.text(bumper.x, bumper.y + bumper.radius + 14, bumper.outcome === 'inflate' ? '▲ INFLATE' : '▼ EFFICIENCY', {
+                fontSize: '13px',
+                color: bumper.outcome === 'inflate' ? '#ffd166' : '#9dff8e',
+                fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(6);
         });
-
-        this.add.text(width / 2, 1110, 'KEEP THE REQUIREMENT MOVING', {
-            fontSize: '16px', color: '#9bcbd4', fontStyle: 'bold'
+        this.add.text(width / 2, 1585, 'GOLD BUMPERS INFLATE  •  GREEN SHRINKS THE CONTRACT', {
+            fontSize: '15px', color: '#9bcbd4', fontStyle: 'bold'
         }).setOrigin(0.5);
     }
 
     private createFlippers(width: number) {
-        this.leftFlipper = this.createVisibleFlipper(270, 'left');
-        this.rightFlipper = this.createVisibleFlipper(width - 270, 'right');
-        this.add.image(250, this.flipperY - 160, 'pinball_sling').setDisplaySize(112, 86);
-        this.add.image(width - 250, this.flipperY - 160, 'pinball_sling').setDisplaySize(112, 86).setFlipX(true);
-        this.add.text(220, this.flipperY + 88, 'LEFT FLIPPER\nTAP TO FLIP', { fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
-        this.add.text(width - 220, this.flipperY + 88, 'RIGHT FLIPPER\nTAP TO FLIP', { fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+        const table = this.workingTable;
+        const left = flipperFromTable(table, 'left');
+        const right = flipperFromTable(table, 'right');
+        this.flipperY = left?.y ?? right?.y ?? PLAYFIELD_LAYOUT.originY + 1420;
+        this.leftFlipper = this.createVisibleFlipper(left?.x ?? 270, 'left');
+        this.rightFlipper = this.createVisibleFlipper(right?.x ?? width - 270, 'right');
+        this.add.text(left?.x ?? 220, this.flipperY + 88, 'LEFT FLIPPER\nHOLD TO FLIP', {
+            fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center'
+        }).setOrigin(0.5);
+        this.add.text(right?.x ?? width - 220, this.flipperY + 88, 'RIGHT FLIPPER\nHOLD TO FLIP', {
+            fontSize: '18px', color: '#d8efff', fontStyle: 'bold', align: 'center'
+        }).setOrigin(0.5);
     }
 
-    /** The highlighted envelope is the playable surface, including the tip. */
     private createVisibleFlipper(x: number, side: FlipperSide) {
-        const container = this.add.container(x, this.flipperY);
-        const blade = this.add.graphics();
-        const left = side === 'left' ? -20 : -200;
-        blade.fillStyle(0xf6d99c, 1);
-        blade.fillRoundedRect(left, -28, 220, 56, 22);
-        blade.lineStyle(7, 0x30150e, 1);
-        blade.strokeRoundedRect(left, -28, 220, 56, 22);
-        blade.lineStyle(3, 0x5de6ff, 0.95);
-        blade.strokeRoundedRect(left + 4, -24, 212, 48, 19);
-        blade.fillStyle(0x5de6ff, 0.95);
-        blade.fillCircle(side === 'left' ? 200 : -200, 0, 9);
-        blade.lineStyle(3, 0x171014, 1);
-        blade.strokeCircle(0, 0, 17);
-        blade.fillStyle(0x171014, 1);
-        blade.fillCircle(0, 0, 11);
+        const container = this.add.container(x, this.flipperY).setDepth(12);
+        const tip = PINBALL_SIZING.flipperTipOffsetPx;
+        const blade = this.add.image(side === 'left' ? tip - 20 : -(tip - 20), 0, side === 'left' ? 'flipper_left' : 'flipper_right')
+            .setDisplaySize(290, 90);
         container.add(blade);
         container.setRotation(side === 'left' ? Phaser.Math.DegToRad(18) : Phaser.Math.DegToRad(-18));
         return container;
     }
 
-    private createRails(width: number) {
-        // These are collision-only guides over the red return lanes in the artwork.
-        // Keeping them as line segments makes the slides functional without a second physics plugin.
-        this.rails = [
-            { x1: 92, y1: 430, x2: 92, y2: 1515 },
-            { x1: width - 92, y1: 430, x2: width - 92, y2: 1515 },
-            { x1: 180, y1: 1140, x2: 180, y2: 1510 },
-            { x1: width - 180, y1: 1140, x2: width - 180, y2: 1510 }
-        ];
-
-        this.obstacles = [
-            { x: 360, y: 820, radius: 32, label: 'LEFT BANK', color: 0x4e8dff },
-            { x: width - 360, y: 820, radius: 32, label: 'RIGHT BANK', color: 0x4e8dff },
-            { x: 330, y: 930, radius: 28, label: 'LEFT BANK LOW', color: 0x63d66b },
-            { x: width - 330, y: 930, radius: 28, label: 'RIGHT BANK LOW', color: 0x63d66b },
-            { x: width / 2, y: 820, radius: 38, label: 'CENTER SLINGSHOT', color: 0xffca4f },
-            { x: 360, y: 1160, radius: 28, label: 'LEFT RETURN', color: 0x63d66b },
-            { x: width - 360, y: 1160, radius: 28, label: 'RIGHT RETURN', color: 0x63d66b },
-            { x: 350, y: 1390, radius: 32, label: 'LEFT DIVERTER', color: 0xff765e },
-            { x: width - 350, y: 1390, radius: 32, label: 'RIGHT DIVERTER', color: 0xff765e }
-        ];
-
-        this.obstacles.forEach((obstacle) => {
-            this.add.image(obstacle.x, obstacle.y, 'pinball_target').setDisplaySize(obstacle.radius * 2.4, obstacle.radius * 2.4).setTint(obstacle.color);
-            this.add.text(obstacle.x, obstacle.y + obstacle.radius + 5, '◆', {
-                fontSize: '12px', color: '#eaffed'
-            }).setOrigin(0.5);
-        });
-
-        this.slides = [
-            { name: 'LEFT RED SLIDE', width: 88, points: [{ x: 175, y: 470 }, { x: 125, y: 650 }, { x: 140, y: 820 }, { x: 215, y: 940 }], color: 0xff3d45 },
-            { name: 'RIGHT RED SLIDE', width: 88, points: [{ x: width - 175, y: 470 }, { x: width - 125, y: 650 }, { x: width - 140, y: 820 }, { x: width - 215, y: 940 }], color: 0xff3d45 },
-            { name: 'LEFT RETURN SLIDE', width: 82, points: [{ x: 205, y: 1130 }, { x: 150, y: 1300 }, { x: 175, y: 1460 }], color: 0x5de6ff },
-            { name: 'RIGHT RETURN SLIDE', width: 82, points: [{ x: width - 205, y: 1130 }, { x: width - 150, y: 1300 }, { x: width - 175, y: 1460 }], color: 0x5de6ff }
-        ];
-        this.slides.forEach((slide) => {
-            const guide = this.add.graphics();
-            guide.lineStyle(3, slide.color, 0.42);
-            guide.beginPath();
-            guide.moveTo(slide.points[0].x, slide.points[0].y);
-            slide.points.slice(1).forEach((point) => guide.lineTo(point.x, point.y));
-            guide.strokePath();
-            this.add.text(slide.points[0].x, slide.points[0].y + 18, 'SLIDE', {
-                fontSize: '13px', color: slide.color === 0xff3d45 ? '#ffb2b6' : '#b7f5ff', fontStyle: 'bold'
-            }).setOrigin(0.5);
-        });
+    private createBallTrail() {
+        if (!this.textures.exists('particle')) {
+            const g = this.add.graphics();
+            g.fillStyle(0xffffff);
+            g.fillRect(0, 0, 4, 4);
+            g.generateTexture('particle', 4, 4);
+            g.destroy();
+        }
+        this.ballTrail = this.add.particles(0, 0, 'particle', {
+            speed: { min: 10, max: 40 },
+            scale: { start: 0.9, end: 0 },
+            alpha: { start: 0.55, end: 0 },
+            lifespan: 280,
+            tint: [0x5de6ff, 0xffd166, 0xffffff],
+            frequency: 28,
+            maxAliveParticles: 60,
+            follow: this.ballSprites[0]
+        }).setDepth(7);
     }
 
     private createControls(width: number, height: number) {
         const plungerX = width - 82;
         const plungerY = height - 182;
-        this.plunger = this.add.image(plungerX, plungerY, 'pinball_plunger').setDisplaySize(118, 220).setInteractive({ useHandCursor: true });
+        this.plunger = this.add.image(plungerX, plungerY, 'pinball_plunger')
+            .setDisplaySize(118, 220)
+            .setInteractive({ useHandCursor: true })
+            .setDepth(15);
         this.add.text(plungerX, plungerY - 6, 'PULL\n& FIRE', {
             fontSize: '21px', color: '#d8efff', align: 'center', fontStyle: 'bold', stroke: '#00111f', strokeThickness: 3
-        }).setOrigin(0.5);
-        this.add.text(plungerX, plungerY + 135, 'PULL DOWN\nRELEASE TO LAUNCH', {
-            fontSize: '14px', color: '#b7eaff', align: 'center', fontStyle: 'bold'
-        }).setOrigin(0.5);
-        this.add.text(width / 2, height - 35, 'TAP LEFT / RIGHT TO FLIP   •   HOLD SPACE: CHARGE LAUNCH', {
-            fontSize: '18px', color: '#d8efff', fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(16);
         this.plunger.on('pointerdown', (pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Event) => {
             event.stopPropagation();
-            if (this.planck?.getBallState() === 'playing' || this.contractAuthorized) return;
+            if (this.planck?.getBallState() === 'playing' || this.contractAuthorized || this.showingCard) return;
             this.plungerDragging = true;
             this.updatePlungerPull(pointer, plungerY);
         });
 
-        this.authorizeButton = this.add.rectangle(width / 2, height - 112, 430, 84, 0x087a42, 0.92).setStrokeStyle(3, 0xa8ff93).setInteractive({ useHandCursor: true });
-        this.add.text(width / 2, height - 112, 'AUTHORIZE CONTRACT', { fontSize: '32px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.authorizeButton = this.add.rectangle(width / 2, height - 112, 430, 84, 0x087a42, 0.92)
+            .setStrokeStyle(3, 0xa8ff93)
+            .setInteractive({ useHandCursor: true })
+            .setDepth(20);
+        this.add.text(width / 2, height - 112, 'AUTHORIZE CONTRACT', {
+            fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(21);
         this.authorizeButton.on('pointerdown', () => this.authorizeContract());
 
-        // The trough belongs behind the paddles: balls pass the flippers before
-        // they drain, and the visible drain never covers the active sprites.
         this.add.image(width / 2, this.flipperY + 48, 'pinball_drain').setDisplaySize(310, 76).setDepth(-1);
-
-        this.add.text(116, height - 48, 'EXIT TO MCLEAN', { fontSize: '18px', color: '#d3dce4', fontStyle: 'bold' }).setOrigin(0.5)
-            .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.scene.start('MansionScene'));
+        this.add.text(116, height - 48, 'EXIT TO MCLEAN', { fontSize: '18px', color: '#d3dce4', fontStyle: 'bold' })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => this.scene.start('MansionScene'));
 
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            if (this.showingCard || this.paused) return;
+            if (this.author?.isEnabled()) return;
             if (pointer.y < height - 430 || pointer.x > width - 280) return;
-            this.pressFlipper(pointer.x < width / 2 ? 'left' : 'right', width);
+            this.pressFlipper(pointer.x < width / 2 ? 'left' : 'right', pointer.id);
         });
-        this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => this.releaseFlipper(pointer.x < width / 2 ? 'left' : 'right', width));
+        this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+            this.releaseFlipper(pointer.x < width / 2 ? 'left' : 'right', pointer.id);
+            // Also release both if finger lifts anywhere — safer on touch.
+            this.releaseFlipper('left', pointer.id);
+            this.releaseFlipper('right', pointer.id);
+        });
         this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
             if (this.plungerDragging) this.updatePlungerPull(pointer, plungerY);
         });
         this.input.on('pointerup', () => this.finishPlungerPull(plungerY));
-        this.input.on('pointerupoutside', () => this.finishPlungerPull(plungerY));
+        this.input.on('pointerupoutside', (pointer: Phaser.Input.Pointer) => {
+            this.releaseFlipper('left', pointer.id);
+            this.releaseFlipper('right', pointer.id);
+            this.finishPlungerPull(plungerY);
+        });
         this.input.on('gameout', () => this.finishPlungerPull(plungerY));
-        this.input.keyboard?.on('keydown-F', () => this.pressFlipper('left', width));
-        this.input.keyboard?.on('keydown-J', () => this.pressFlipper('right', width));
-        this.input.keyboard?.on('keyup-F', () => this.releaseFlipper('left', width));
-        this.input.keyboard?.on('keyup-J', () => this.releaseFlipper('right', width));
+        this.input.keyboard?.on('keydown-F', () => this.pressFlipper('left', -1));
+        this.input.keyboard?.on('keydown-J', () => this.pressFlipper('right', -2));
+        this.input.keyboard?.on('keyup-F', () => this.releaseFlipper('left', -1));
+        this.input.keyboard?.on('keyup-J', () => this.releaseFlipper('right', -2));
         this.input.keyboard?.on('keydown-SPACE', () => {
-            if (this.planck?.getBallState() !== 'playing' && !this.contractAuthorized && !this.spaceCharging) {
+            if (this.planck?.getBallState() !== 'playing' && !this.contractAuthorized && !this.spaceCharging && !this.showingCard) {
                 this.spaceCharging = true;
                 this.launchChargeStartedAt = this.time.now;
                 this.statusText.setText('HOLD SPACE — CHARGE THE LAUNCH');
@@ -310,10 +569,37 @@ export class ProcurementScene extends Phaser.Scene {
         this.input.keyboard?.on('keyup-SPACE', () => {
             if (!this.spaceCharging) return;
             this.spaceCharging = false;
-            this.launchBall(undefined, this.getLaunchCharge());
+            this.launchBall(this.getLaunchCharge());
         });
-        this.input.keyboard?.on('keydown-ENTER', () => this.authorizeContract());
-        this.input.keyboard?.on('keydown-ESC', () => this.scene.start('MansionScene'));
+        this.input.keyboard?.on('keydown-ENTER', () => {
+            if (!this.paused && !this.showingCard) this.authorizeContract();
+        });
+        this.input.keyboard?.on('keydown-ESC', () => this.togglePause());
+    }
+
+    private togglePause() {
+        if (this.contractAuthorized || this.showingCard) return;
+        if (this.paused) {
+            this.resumeFromPause();
+            return;
+        }
+        this.paused = true;
+        this.pauseMenu = new PauseMenu(this, {
+            title: 'PROCUREMENT PAUSED',
+            onResume: () => this.resumeFromPause(),
+            onQuitToTitle: () => {
+                currentRun.save();
+                this.sound.stopAll();
+                audioManager.stopMusic();
+                this.scene.start('TitleScene');
+            }
+        });
+    }
+
+    private resumeFromPause() {
+        this.paused = false;
+        this.pauseMenu?.destroy();
+        this.pauseMenu = undefined;
     }
 
     private getLaunchCharge() {
@@ -330,323 +616,317 @@ export class ProcurementScene extends Phaser.Scene {
         if (!this.plungerDragging) return;
         this.plungerDragging = false;
         const charge = Phaser.Math.Clamp(this.plungerPull / 155, 0, 1);
-        this.launchBall(undefined, charge);
+        this.launchBall(charge);
         this.tweens.add({ targets: this.plunger, y: baseY, duration: 100, ease: 'Quad.easeOut' });
         this.plungerPull = 0;
     }
 
-    private launchBall(pointer?: Phaser.Input.Pointer, charge = 0.35) {
-        if (this.planck) {
-            if (this.contractAuthorized || this.planck.getBallState() === 'playing') return;
-            // The physical shooter exit is above the lower slingshot bank, so
-            // every pull gets a clean, upward route into the scoring field.
-            this.planck.relaunch(this.scale.width - 130, 1400, Phaser.Math.Linear(22, 34, charge), 0);
-            this.ball?.setVisible(true);
-            this.lastBumperHit.clear();
-            this.statusText.setText('PLANCK LAUNCH — INFLATE THE REQUIREMENT');
-            return;
-        }
-        if (this.ball || this.contractAuthorized) return;
-        const { width } = this.scale;
-        this.ball = this.add.image(width - 173, 1365, 'pinball_ball').setDisplaySize(this.ballRadius * 2, this.ballRadius * 2);
-        // Tapping higher/lower on the launch lane changes the aim. A small bounded
-        // variance prevents identical launches from repeating the same route.
-        const launchY = Phaser.Math.Clamp(pointer?.y ?? 1450, 1340, 1560);
-        const playerAim = Phaser.Math.Linear(-760, 200, (launchY - 1340) / 220);
-        const launchSpeed = Phaser.Math.Linear(950, 1650, charge);
-        this.ballVelocity.set(playerAim * (0.8 + charge * 0.35) + Phaser.Math.Between(-70, 70), -launchSpeed);
-        this.bumperHits = 0;
-        this.launchAge = 0;
-        this.slideCooldown.clear();
-        this.returnLaneCooldown.clear();
-        this.lastBumperHit.clear();
-        this.statusText.setText('HIT BUMPERS TO INFLATE THE REQUIREMENT');
+    private launchBall(charge = 0.35) {
+        if (this.paused || this.showingCard || !this.planck) return;
+        if (this.contractAuthorized || this.planck.getBallState() === 'playing') return;
+        // Power only — any meaningful left aim scrapes the divider and dies in the tube.
+        // The top exit hood is what feeds the ball into play.
+        const power = Phaser.Math.Linear(40, 52, charge);
+        this.planck.relaunch(SHOOTER_LANE.launchX, SHOOTER_LANE.launchY, power, 0);
+        this.syncBallSprites();
+        this.author?.clearTrajectory();
+        this.skillLane.setTexture('pinball_lane_on');
+        this.pulseSkillArmed(true);
+        this.statusText.setText('LAUNCHED — up the tube, hood kicks left into play');
+        this.setPhase('02 PLAY', '#7df4ff');
+        this.cameras.main.flash(80, 90, 200, 255);
     }
 
-    private pressFlipper(side: FlipperSide, width: number) {
-        if (this.planck) {
-            const pulse = ++this.flipperPulse[side];
-            this.planck.setFlipper(side, true);
-            // A touch tap must never leave a motor latched if Android delays
-            // or drops pointer-up while the browser scrolls or loses focus.
-            this.time.delayedCall(110, () => {
-                if (this.flipperPulse[side] === pulse) this.planck?.setFlipper(side, false);
-            });
+    private pulseSkillArmed(armed: boolean) {
+        if (!this.skillArmedRing) return;
+        this.tweens.killTweensOf(this.skillArmedRing);
+        if (!armed) {
+            this.skillArmedRing.setStrokeStyle(4, PINBALL_BOARDS[this.boardId].accent, 0);
+            this.skillArmedRing.setScale(1).setAlpha(1);
             return;
         }
-        if (side === 'left') {
-            this.leftFlipper.setAngle(-42);
-        } else {
-            this.rightFlipper.setAngle(42);
-        }
-        this.kickBall(side, width);
+        this.skillArmedRing.setStrokeStyle(5, PINBALL_BOARDS[this.boardId].accent, 0.85);
+        this.tweens.add({
+            targets: this.skillArmedRing, scale: 1.18, alpha: 0.35, duration: 420,
+            yoyo: true, repeat: -1, ease: 'Sine.inOut'
+        });
     }
 
-    private releaseFlipper(side: FlipperSide, _width: number) {
-        if (this.planck) {
-            // Tap duration is owned by pressFlipper so release timing cannot
-            // leave a Planck motor in its raised state.
-            return;
-        }
-        if (side === 'left') {
-            this.leftFlipper.setAngle(18);
-        } else {
-            this.rightFlipper.setAngle(-18);
+    private pressFlipper(side: FlipperSide, pointerId: number) {
+        if (this.paused || this.showingCard || !this.planck) return;
+        this.flipperHeld[side].add(pointerId);
+        this.planck.setFlipper(side, true);
+    }
+
+    private releaseFlipper(side: FlipperSide, pointerId: number) {
+        this.flipperHeld[side].delete(pointerId);
+        if (this.flipperHeld[side].size === 0) {
+            this.planck?.setFlipper(side, false);
         }
     }
 
-    private kickBall(side: FlipperSide, width: number) {
-        if (!this.ball || this.ball.y < this.flipperY - 115 || this.ball.y > this.flipperY + 85) return;
-        const pivotX = side === 'left' ? 270 : width - 270;
-        if (Math.abs(this.ball.x - pivotX) > this.flipperLength + 45) return;
-        this.ballVelocity.set(side === 'left' ? 760 : -760, -1320);
+    private ensureBallSprite(index: number) {
+        while (this.ballSprites.length <= index) {
+            const sprite = this.add.image(0, 0, 'pinball_ball')
+                .setDisplaySize(this.ballRadius * 2, this.ballRadius * 2)
+                .setDepth(8)
+                .setVisible(false);
+            this.ballSprites.push(sprite);
+        }
+        return this.ballSprites[index];
+    }
+
+    private syncBallSprites() {
+        const balls = this.planck?.getBalls() ?? [];
+        this.ballSprites.forEach((sprite, index) => {
+            const ball = balls[index];
+            if (!ball) {
+                sprite.setVisible(false);
+                return;
+            }
+            sprite.setVisible(true).setPosition(ball.x, ball.y);
+        });
+        balls.forEach((_ball, index) => this.ensureBallSprite(index));
+        if (this.ballTrail && this.ballSprites[0]) {
+            this.ballTrail.startFollow(this.ballSprites[0]);
+        }
+        const count = balls.length;
+        this.multiballText.setText(count > 1 ? `MULTIBALL x${count}` : '');
     }
 
     update(_time: number, delta: number) {
-        if (this.combo > 0 && this.time.now > this.comboExpiresAt) {
-            this.combo = 0;
+        if (this.paused || this.showingCard) return;
+        if (this.contract.state.combo > 0 && this.time.now > this.comboExpiresAt) {
+            this.contract.state.combo = 0;
             this.comboText.setText('INFLATION COMBO x1');
         }
         if (this.spaceCharging) {
             this.statusText.setText(`HOLD SPACE — LAUNCH POWER ${Math.round(this.getLaunchCharge() * 100)}%`);
         }
-        if (this.planck) {
-            this.planck.step(delta);
-            const ball = this.planck.getBall();
-            this.ball?.setPosition(ball.x, ball.y);
-            const angles = this.planck.getFlipperAngles();
-            this.leftFlipper.setRotation(angles.left);
-            this.rightFlipper.setRotation(angles.right);
-            this.planck.consumeEvents().forEach((event) => {
-                if (event.type === 'BUMPER_HIT') {
-                    const bumper = this.bumpers[event.index ?? 0];
-                    this.addToProcurement(bumper.weapon, bumper.quantity, bumper.delay, bumper.value);
-                    this.showBumperHit(bumper);
-                }
-                if (event.type === 'SLINGSHOT_HIT') this.statusText.setText('SLINGSHOT KICK — REQUIREMENT ACCELERATING');
-                if (event.type === 'TARGET_HIT') {
-                    const bumper = this.bumpers.find((entry) => entry.outcome === 'inflate')!;
-                    this.addToProcurement(bumper.weapon, 1, 0.05, 1_000_000_000);
-                    this.statusText.setText('TARGET BANK HIT — REQUIREMENT REWRITTEN');
-                }
-                if (event.type === 'BALL_DRAINED') {
-                    this.ball?.setVisible(false);
-                    this.statusText.setText(this.score > 0 ? 'BALL DRAINED — AUTHORIZE OR LAUNCH ANOTHER' : 'BALL DRAINED — TAP LAUNCH REQ TO REDEPLOY');
-                }
-            });
-            return;
-        }
-        if (!this.ball) return;
-        const step = Math.min(delta, 34) / 1000;
-        const { width, height } = this.scale;
-        this.launchAge += step;
-        this.ballVelocity.y += 980 * step;
-        this.ballVelocity.limit(1250);
-        this.ball.x += this.ballVelocity.x * step;
-        this.ball.y += this.ballVelocity.y * step;
+        if (!this.planck) return;
 
-        this.checkRails(width);
-        if (this.ball.y < 405) {
-            this.ball.y = 405;
-            this.ballVelocity.y = Math.abs(this.ballVelocity.y) * 0.9;
+        this.planck.step(delta);
+        const angles = this.planck.getFlipperAngles();
+        this.leftFlipper.setRotation(angles.left);
+        this.rightFlipper.setRotation(angles.right);
+        this.syncBallSprites();
+        if (this.author?.isEnabled()) {
+            const primary = this.planck.getBall();
+            this.author.sampleBall(primary.x, primary.y);
+            this.author.redraw();
         }
 
-        this.checkFlippers(width);
-        this.checkSlides();
-        this.checkObstacles();
-        this.checkBumpers();
-        this.checkReturnFunnels(width);
-        // A pinball should eventually return to the player. This prevents a perfect
-        // bumper orbit from farming one contract forever while preserving skillful play.
-        if (this.launchAge > 18 || this.bumperHits >= this.maxBumperHitsPerBall) {
-            this.ballVelocity.y = Math.max(this.ballVelocity.y, 700);
-            this.statusText.setText('BOARD TILT — BALL RETURNING TO PLUNGER');
-        }
-        this.checkDrain(height, width);
+        this.planck.consumeEvents().forEach((event) => {
+            if (event.type === 'BUMPER_HIT') {
+                const bumper = this.bumpers[event.index ?? 0];
+                if (!bumper) return;
+                this.handleBumper(bumper);
+            }
+            if (event.type === 'SLINGSHOT_HIT') {
+                this.statusText.setText('SLINGSHOT KICK — REQUIREMENT ACCELERATING');
+                this.flashSling(event.id);
+                this.cameras.main.shake(70, 0.004);
+            }
+            if (event.type === 'TARGET_HIT') {
+                this.flashTarget(event.id);
+                const bankTotal = countDropTargets(this.workingTable);
+                this.targetBankHits = Math.min(bankTotal, this.targetBankHits + 1);
+                this.targetBankText.setText(`TARGET BANK ${this.targetBankHits}/${bankTotal}`);
+                const inflate = this.bumpers.find((entry) => entry.outcome === 'inflate');
+                if (inflate) {
+                    this.handleBumper({
+                        ...inflate,
+                        id: event.id ?? 'target-bank',
+                        quantity: 1,
+                        delay: 0.05,
+                        value: 1_000_000_000 + this.targetBankHits * 250_000_000,
+                        label: 'TARGET BANK'
+                    });
+                }
+                this.statusText.setText(
+                    this.targetBankHits >= bankTotal
+                        ? 'TARGET BANK CLEARED — SUPPLEMENTAL BONUS'
+                        : 'TARGET BANK HIT — REQUIREMENT REWRITTEN'
+                );
+                if (this.targetBankHits >= bankTotal && this.planck) {
+                    this.targetBankHits = 0;
+                    this.targetBankText.setText(`TARGET BANK 0/${bankTotal}`);
+                    const spawned = this.planck.spawnExtraBalls(1);
+                    if (spawned > 0) this.statusText.setText('TARGET BANK COMPLETE — BONUS BALL');
+                }
+            }
+            if (event.type === 'POST_HIT') {
+                this.flashPost(event.id);
+            }
+            if (event.type === 'LANE_HIT') {
+                this.flashLane(event.id);
+                this.statusText.setText(`WIRE LANE — ${event.id ?? 'FLOW'}`);
+            }
+            if (event.type === 'LANE_ENTER') {
+                this.flashLane(event.id);
+                this.statusText.setText(`ENTER ${event.id?.toUpperCase() ?? 'LANE'}`);
+                this.cameras.main.shake(40, 0.002);
+            }
+            if (event.type === 'LANE_EXIT') {
+                this.flashLane(event.id);
+                this.statusText.setText(`EXIT ${event.id?.toUpperCase() ?? 'LANE'} — SCORE PATH`);
+                this.cameras.main.flash(80, 120, 255, 180);
+            }
+            if (event.type === 'SKILL_SHOT') {
+                const result = this.contract.recordSkillShot();
+                this.statusText.setText(result.status);
+                this.skillLane.setTexture('pinball_skill_gate');
+                this.pulseSkillArmed(false);
+                const skill = skillGateFromTable(this.workingTable);
+                this.showHitBurst(skill?.x ?? this.scale.width / 2, skill?.y ?? 500, true);
+                this.cameras.main.flash(120, 255, 210, 80);
+                this.showAdviser('addington', 'procurement');
+                this.updateHUD();
+            }
+            if (event.type === 'BALL_DRAINED') {
+                this.pulseSkillArmed(false);
+                this.syncBallSprites();
+                this.onBallDrained();
+            }
+            if (event.type === 'SHOOTER_RETURN') {
+                this.pulseSkillArmed(false);
+                this.ensureBallSprite(0).setPosition(SHOOTER_LANE.readyX, SHOOTER_LANE.readyY).setVisible(true);
+                this.statusText.setText('SHOT FELL BACK IN THE TUBE — PULL THE PLUNGER AGAIN');
+                this.setPhase('01 LOAD', '#9bcbd4');
+            }
+        });
     }
 
-    private checkDrain(height: number, width: number) {
-        if (!this.ball || this.ball.y <= height - 170) return;
-
-        // The only opening is the center trough between the two paddles.
-        const drainLeft = 455;
-        const drainRight = width - 455;
-        if (this.ball.x >= drainLeft && this.ball.x <= drainRight) {
-            this.drainBall();
-            return;
-        }
-
-        // The lower side aprons return balls to the playfield instead of allowing
-        // them to vanish at the bottom edge.
-        this.ball.y = height - 170;
-        this.ballVelocity.y = -Math.max(520, Math.abs(this.ballVelocity.y) * 0.72);
-        this.ballVelocity.x *= 0.92;
+    private flashSling(id?: string) {
+        const sprite = id ? this.slingSprites.get(id) : undefined;
+        if (!sprite) return;
+        this.tweens.add({
+            targets: sprite, scaleX: sprite.scaleX * 1.18, scaleY: sprite.scaleY * 0.82,
+            duration: 70, yoyo: true
+        });
+        this.showHitBurst(sprite.x, sprite.y, true);
     }
 
-    private checkReturnFunnels(width: number) {
-        if (!this.ball || this.ball.y < 1460 || this.ball.y > this.flipperY + 35 || this.ballVelocity.y <= 0) return;
-
-        const side: FlipperSide | undefined = this.ball.x < width / 2 - 170
-            ? 'left'
-            : this.ball.x > width / 2 + 170 ? 'right' : undefined;
-        if (!side || (this.returnLaneCooldown.get(side) ?? 0) > this.time.now) return;
-
-        // The painted lower aprons feed inward toward the paddle tips.
-        this.returnLaneCooldown.set(side, this.time.now + 500);
-        this.ballVelocity.x = side === 'left' ? 560 : -560;
-        this.ballVelocity.y = 520;
-        this.statusText.setText(`${side.toUpperCase()} RETURN LANE — FEEDING FLIPPER`);
+    private flashTarget(id?: string) {
+        const sprite = id ? this.targetSprites.get(id) : undefined;
+        if (!sprite) return;
+        sprite.setTint(0xffffff);
+        this.tweens.add({
+            targets: sprite, scale: sprite.scale * 1.25, duration: 80, yoyo: true,
+            onComplete: () => sprite.setTint(0xffd166)
+        });
+        this.showHitBurst(sprite.x, sprite.y, true);
     }
 
-    private checkRails(width: number) {
-        if (!this.ball) return;
-        for (const rail of this.rails) {
-            const closestX = Phaser.Math.Clamp(this.ball.x, Math.min(rail.x1, rail.x2), Math.max(rail.x1, rail.x2));
-            const closestY = Phaser.Math.Clamp(this.ball.y, Math.min(rail.y1, rail.y2), Math.max(rail.y1, rail.y2));
-            const dx = this.ball.x - closestX;
-            const dy = this.ball.y - closestY;
-            if (dx * dx + dy * dy > (this.ballRadius + 10) ** 2) continue;
+    private flashPost(id?: string) {
+        const sprite = id ? this.postSprites.get(id) : undefined;
+        if (!sprite) return;
+        this.tweens.add({
+            targets: sprite, scale: 1.35, alpha: 0.55, duration: 90, yoyo: true
+        });
+    }
 
-            if (rail.x1 === rail.x2) {
-                const leftRail = rail.x1 < width / 2;
-                this.ball.x = rail.x1 + (leftRail ? 30 : -30);
-                this.ballVelocity.x = Math.abs(this.ballVelocity.x) * (leftRail ? 1 : -1);
-            } else {
-                this.ballVelocity.y = -Math.abs(this.ballVelocity.y);
+    private flashLane(id?: string) {
+        if (!id) return;
+        const direct = this.laneGlows.get(id);
+        const outer = this.laneGlows.get(`${id}-outer`);
+        const glow = direct ?? outer;
+        if (!glow) return;
+        this.tweens.add({
+            targets: glow, alpha: 0.85, duration: 120, yoyo: true,
+            onComplete: () => glow.setAlpha(0.15)
+        });
+    }
+
+    private comboExpiresAt = 0;
+
+    private handleBumper(bumper: ProcurementBumper) {
+        const result = this.contract.applyBumper(bumper);
+        this.comboExpiresAt = this.time.now + 2200;
+        this.statusText.setText(result.status);
+        this.showBumperHit(bumper, result.scaledValue, result.multiplier);
+        if (bumper.id.includes('emergency') && this.planck) {
+            const spawned = this.planck.spawnExtraBalls(2);
+            if (spawned > 0) {
+                this.statusText.setText(`EMERGENCY SUPPLEMENTAL — MULTIBALL x${this.planck.getActiveBallCount()}`);
+                this.cameras.main.shake(220, 0.01);
+                this.showAdviser('margin', 'procurement');
             }
         }
+        this.updateHUD();
     }
 
-    private checkFlippers(width: number) {
-        if (!this.ball) return;
-        const flippers = [
-            { side: 'left' as FlipperSide, pivotX: 270, angle: this.leftFlipper.rotation },
-            { side: 'right' as FlipperSide, pivotX: width - 270, angle: this.rightFlipper.rotation }
-        ];
-        for (const flipper of flippers) {
-            const direction = flipper.side === 'left' ? 1 : -1;
-            const endX = flipper.pivotX + Math.cos(flipper.angle) * this.flipperLength * direction;
-            const endY = this.flipperY + Math.sin(flipper.angle) * this.flipperLength * direction;
-            const dx = endX - flipper.pivotX;
-            const dy = endY - this.flipperY;
-            const lengthSq = dx * dx + dy * dy;
-            const t = Phaser.Math.Clamp(((this.ball.x - flipper.pivotX) * dx + (this.ball.y - this.flipperY) * dy) / lengthSq, 0, 1);
-            const closestX = flipper.pivotX + dx * t;
-            const closestY = this.flipperY + dy * t;
-            if (Phaser.Math.Distance.Between(this.ball.x, this.ball.y, closestX, closestY) > this.ballRadius + 23) continue;
-            this.ball.x = closestX;
-            this.ball.y = closestY - this.ballRadius - 8;
-            const power = flipper.side === 'left' ? 820 : -820;
-            this.ballVelocity.set(power + (t - 0.5) * 300, -900 - t * 520);
+    private showBumperHit(bumper: ProcurementBumper, scaledValue: number, multiplier: number) {
+        const flash = this.add.text(
+            bumper.x,
+            bumper.y - bumper.radius - 22,
+            `${scaledValue >= 0 ? '+' : '-'}${this.contract.formatBudget(Math.abs(scaledValue))}${multiplier > 1 ? `  x${multiplier}` : ''}`,
+            {
+                fontSize: '28px',
+                color: bumper.outcome === 'inflate' ? '#9dff8e' : '#ff9b9b',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4
+            }
+        ).setOrigin(0.5).setDepth(30);
+        this.tweens.add({ targets: flash, y: flash.y - 65, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
+
+        const badge = this.bumperSprites.get(bumper.id);
+        if (badge) {
+            this.tweens.add({ targets: badge, scale: badge.scale * 1.18, angle: badge.angle + 14, duration: 90, yoyo: true });
         }
-    }
-
-    private checkObstacles() {
-        if (!this.ball) return;
-        for (const obstacle of this.obstacles) {
-            const dx = this.ball.x - obstacle.x;
-            const dy = this.ball.y - obstacle.y;
-            const distance = Math.hypot(dx, dy);
-            if (distance > obstacle.radius + this.ballRadius || distance === 0) continue;
-
-            const normal = new Phaser.Math.Vector2(dx, dy).normalize();
-            this.ball.x = obstacle.x + normal.x * (obstacle.radius + this.ballRadius + 2);
-            this.ball.y = obstacle.y + normal.y * (obstacle.radius + this.ballRadius + 2);
-            const speed = Math.max(650, this.ballVelocity.length());
-            this.ballVelocity.copy(normal.scale(speed));
-            this.ballVelocity.y = Math.min(this.ballVelocity.y, -300);
-            const key = `obstacle-${obstacle.label}`;
-            if ((this.lastBumperHit.get(key) ?? 0) + 160 > this.time.now) continue;
-            this.lastBumperHit.set(key, this.time.now);
-        }
-    }
-
-    private checkSlides() {
-        if (!this.ball) return;
-        for (const slide of this.slides) {
-            const centerX = this.slideCenterAtY(slide, this.ball.y);
-            const inside = centerX !== undefined && this.ballVelocity.y > 0
-                && Math.abs(this.ball.x - centerX) < slide.width / 2;
-            if (!inside || (this.slideCooldown.get(slide.name) ?? 0) > this.time.now) continue;
-
-            this.slideCooldown.set(slide.name, this.time.now + 650);
-            this.ball.x = centerX;
-            this.ballVelocity.set(0, 760);
-            this.statusText.setText(`${slide.name} ENGAGED — BALL ROUTED DOWN-LANE`);
-            const pulse = this.add.rectangle(centerX, this.ball.y, slide.width, 8, slide.color, 0.85);
+        const halo = this.bumperHalos.get(bumper.id);
+        if (halo) {
+            halo.setAlpha(0.7).setScale(0.72);
             this.tweens.add({
-                targets: pulse,
-                alpha: 0,
-                scaleX: 0.25,
-                duration: 420,
-                onComplete: () => pulse.destroy()
+                targets: halo, alpha: 0.14, scale: 1.65, duration: 300, ease: 'Cubic.out',
+                onComplete: () => halo.setScale(1)
             });
         }
-    }
+        this.showHitBurst(bumper.x, bumper.y, bumper.outcome === 'inflate');
+        this.comboText.setText(
+            this.contract.state.combo > 0
+                ? `INFLATION COMBO x${this.contract.comboMultiplier()}`
+                : 'EFFICIENCY INCIDENT'
+        );
 
-    private slideCenterAtY(slide: Slide, y: number): number | undefined {
-        for (let i = 0; i < slide.points.length - 1; i++) {
-            const start = slide.points[i];
-            const end = slide.points[i + 1];
-            const minY = Math.min(start.y, end.y);
-            const maxY = Math.max(start.y, end.y);
-            if (y < minY || y > maxY) continue;
-            const progress = (y - start.y) / (end.y - start.y || 1);
-            return Phaser.Math.Linear(start.x, end.x, progress);
-        }
-        return undefined;
-    }
-
-    private checkBumpers() {
-        if (!this.ball) return;
-        for (const bumper of this.bumpers) {
-            const key = bumper.label;
-            const distance = Phaser.Math.Distance.Between(this.ball.x, this.ball.y, bumper.x, bumper.y);
-            if (distance > bumper.radius + 22 || (this.lastBumperHit.get(key) ?? 0) + 180 > this.time.now) continue;
-            this.lastBumperHit.set(key, this.time.now);
-            const normal = new Phaser.Math.Vector2(this.ball.x - bumper.x, this.ball.y - bumper.y);
-            if (normal.lengthSq() === 0) normal.set(0, 1);
-            normal.normalize();
-            this.ball.x = bumper.x + normal.x * (bumper.radius + this.ballRadius + 2);
-            this.ball.y = bumper.y + normal.y * (bumper.radius + this.ballRadius + 2);
-            this.ballVelocity.copy(normal.scale(850));
-            this.ballVelocity.y = Math.min(this.ballVelocity.y, -420);
-            this.bumperHits++;
-            this.addToProcurement(bumper.weapon, bumper.quantity, bumper.delay, bumper.value);
-            this.showBumperHit(bumper);
-        }
-    }
-
-    private showBumperHit(bumper: ProcurementBumper) {
-        const multiplier = bumper.outcome === 'inflate' ? Math.min(4, 1 + Math.floor(this.combo / 3)) : 1;
-        const flash = this.add.text(bumper.x, bumper.y - bumper.radius - 22, `${bumper.value >= 0 ? '+' : '-'}${this.formatBudget(Math.abs(bumper.value) * multiplier)}${multiplier > 1 ? `  x${multiplier}` : ''}`, {
-            fontSize: '30px', color: bumper.outcome === 'inflate' ? '#9dff8e' : '#ff9b9b', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4
-        }).setOrigin(0.5);
-        this.tweens.add({ targets: flash, y: flash.y - 65, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
-        const pulse = this.add.circle(bumper.x, bumper.y, bumper.radius, bumper.color, 0.35).setStrokeStyle(5, 0xffffff, 0.9);
-        this.tweens.add({ targets: pulse, scale: 1.55, alpha: 0, duration: 360, onComplete: () => pulse.destroy() });
-        this.combo = bumper.outcome === 'inflate' ? this.combo + 1 : 0;
-        this.comboExpiresAt = this.time.now + 2200;
-        this.comboText.setText(this.combo > 0 ? `INFLATION COMBO x${Math.min(4, 1 + Math.floor(this.combo / 3))}` : 'EFFICIENCY INCIDENT');
-        const adviser = bumper.label === 'AUDIT FAILED'
+        const adviser = bumper.id === 'audit-failed'
             ? 'audit'
-            : bumper.label === 'TARGET ACQUIRED'
-                ? 'addington'
-                : bumper.label === 'JACKPOT' || bumper.label === 'COST OVERRUN'
-                    ? 'margin'
+            : bumper.id === 'jackpot' || bumper.id === 'cost-overrun' || bumper.id === 'emergency-supplemental'
+                ? 'margin'
+                : bumper.outcome === 'efficiency'
+                    ? 'audit'
                     : 'ledger';
         this.showAdviser(adviser, 'procurement');
     }
 
-    private addToProcurement(weapon: WeaponType, quantity: number, delay: number, value: number) {
-        const multiplier = value > 0 ? Math.min(4, 1 + Math.floor(this.combo / 3)) : 1;
-        if (quantity > 0) this.procurementList[weapon] = (this.procurementList[weapon] ?? 0) + quantity;
-        this.leadTimeDelay += delay;
-        this.score = Math.max(0, this.score + value * multiplier);
-        currentRun.taxpayerBurn = Math.max(0, currentRun.taxpayerBurn + value * multiplier);
-        currentRun.contractorProfit = Math.max(0, currentRun.contractorProfit + value * multiplier * 0.15);
-        this.statusText.setText(value > 0 ? 'EMERGENCY REQUIREMENT EXPANDED — KEEP HITTING BUMPERS' : 'EFFICIENCY DETECTED — CONTRACT SHRINKING');
-        this.updateHUD();
+    private showHitBurst(x: number, y: number, inflate: boolean) {
+        const burst = this.add.image(x, y, inflate ? 'pinball_hit_inflate' : 'pinball_hit_efficiency')
+            .setDisplaySize(140, 140)
+            .setDepth(25)
+            .setAlpha(0.95);
+        this.tweens.add({
+            targets: burst, scale: 1.6, alpha: 0, duration: 320,
+            onComplete: () => burst.destroy()
+        });
+    }
+
+    private onBallDrained() {
+        if (this.contractAuthorized || this.showingCard) return;
+        this.skillLane.setTexture('pinball_lane_off');
+        this.setPhase('03 REVIEW', '#ffd166');
+        this.statusText.setText(this.contract.state.value > 0
+            ? 'BALL DRAINED — REVIEW THE CONTRACT'
+            : 'BALL DRAINED — LAUNCH AGAIN');
+        this.showingCard = true;
+        new ContractCard(this, this.contract, 'drain', {
+            onContinue: () => {
+                this.showingCard = false;
+                this.statusText.setText(this.contract.state.value > 0
+                    ? 'AUTHORIZE FOR MANSIONS — OR LAUNCH ANOTHER BALL'
+                    : 'NO REQUIREMENT FILED — PULL THE PLUNGER');
+            }
+        });
     }
 
     private showAdviser(characterId: keyof typeof CHARACTERS, scene: 'procurement') {
@@ -658,46 +938,38 @@ export class ProcurementScene extends Phaser.Scene {
         this.tweens.add({ targets: this.adviserPortrait, alpha: 1, duration: 180 });
     }
 
-    private drainBall() {
-        this.ball?.destroy();
-        this.ball = undefined;
-        this.ballVelocity.set(0, 0);
-        this.statusText.setText(this.score > 0 ? 'REQUIREMENT READY — AUTHORIZE THE CONTRACT' : 'NO REQUIREMENT FILED — LAUNCH AGAIN');
-    }
-
     private updateHUD() {
-        const items = Object.entries(this.procurementList).map(([weapon, quantity]) => `${weapon}: ${quantity}`).join('  •  ') || 'NO CONTRACT ITEMS YET';
+        const items = Object.entries(this.contract.state.items)
+            .map(([weapon, quantity]) => `${weapon}: ${quantity}`)
+            .join('  •  ') || 'NO CONTRACT ITEMS YET';
         this.valueText.setText(`CONTRACT: ${items}`);
-        this.delayText.setText(`VALUE: ${this.formatBudget(this.score)}  •  DELIVERY DELAY: +${this.leadTimeDelay.toFixed(1)} YEARS`);
-        this.profitText.setText(`CONTRACTOR PROFIT: ${this.formatBudget(currentRun.contractorProfit)}`);
-        this.authorizeButton?.setFillStyle(this.score > 0 ? 0x087a42 : 0x3c4a55, this.score > 0 ? 0.92 : 0.6);
+        this.delayText.setText(
+            `VALUE: ${this.contract.formatBudget(this.contract.state.value)}  •  DELAY: +${this.contract.state.leadTimeDelay.toFixed(1)} YR`
+        );
+        this.profitText.setText(`CONTRACTOR PROFIT: ${this.contract.formatBudget(currentRun.contractorProfit)}`);
+        this.authorizeButton?.setFillStyle(this.contract.state.value > 0 ? 0x087a42 : 0x3c4a55, this.contract.state.value > 0 ? 0.92 : 0.6);
     }
 
-    private formatBudget(value: number) {
-        return value >= 1e12 ? `$${(value / 1e12).toFixed(2)}T` : `$${(value / 1e9).toFixed(1)}B`;
+    private setPhase(phase: string, color: string) {
+        const steps = ['01 LOAD', '02 PLAY', '03 REVIEW', '04 AUTHORIZE'];
+        this.phaseText.setText(steps.map((step) => step === phase ? `[${step}]` : step).join('  •  '));
+        this.phaseText.setColor(color);
     }
 
     private authorizeContract() {
-        if (this.contractAuthorized || this.score <= 0) {
+        if (this.paused || this.showingCard) return;
+        if (this.contractAuthorized || this.contract.state.value <= 0) {
             if (!this.contractAuthorized) this.statusText.setText('HIT A BUMPER BEFORE AUTHORIZING A CONTRACT');
             return;
         }
         this.contractAuthorized = true;
-        this.ball?.destroy();
-        this.ball = undefined;
-        for (const weapon in this.procurementList) {
-            currentRun.productionQueue.push({
-                fiscalYear: currentRun.currentFY + Math.ceil(this.leadTimeDelay),
-                weaponType: weapon as WeaponType,
-                quantity: this.procurementList[weapon as WeaponType]!
-            } satisfies DeliveryBatch);
-        }
-        currentRun.save();
+        const { summary } = this.contract.authorize();
         this.cameras.main.flash(500, 0, 255, 0);
-        this.statusText.setText('CONTRACT AUTHORIZED — EXECUTIVES NOTIFIED');
-        this.add.text(this.scale.width / 2, this.scale.height / 2, 'CONTRACT AUTHORIZED', {
-            fontSize: '58px', color: '#a8ff93', fontStyle: 'bold', stroke: '#000000', strokeThickness: 8
-        }).setOrigin(0.5);
-        this.time.delayedCall(1400, () => this.scene.start('MansionScene'));
+        this.statusText.setText(summary);
+        this.setPhase('04 AUTHORIZED', '#a8ff93');
+        this.showingCard = true;
+        new ContractCard(this, this.contract, 'authorize', {
+            onContinue: () => this.scene.start('MansionScene')
+        });
     }
 }

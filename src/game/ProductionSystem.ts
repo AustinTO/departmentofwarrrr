@@ -7,12 +7,16 @@ export class ProductionSystem {
         [WeaponType.GUN]: 0,
         [WeaponType.JAMMER]: 1,
         [WeaponType.INTERCEPTOR]: 2,
-        [WeaponType.INTERCEPTOR_BLOCK_II]: 4
+        [WeaponType.INTERCEPTOR_BLOCK_II]: 4,
+        [WeaponType.HYDRA]: 3,
+        [WeaponType.RAILGUN]: 2,
+        [WeaponType.SEEKER]: 3
     };
 
     public orderMunitions(type: WeaponType, quantity: number) {
         const leadTime = this.leadTimes[type];
-        const deliveryYear = currentRun.currentFY + leadTime;
+        const speed = currentRun.activeDoctrine?.effect.productionSpeed || 1.0;
+        const deliveryYear = currentRun.currentFY + Math.max(0, Math.ceil(leadTime / speed));
 
         const batch: DeliveryBatch = {
             fiscalYear: deliveryYear,
@@ -26,7 +30,8 @@ export class ProductionSystem {
 
     public processEndOfYear() {
         currentRun.currentFY++;
-        
+        currentRun.syncUnlocks();
+
         // Deliver ready batches
         const delivered = currentRun.productionQueue.filter(b => b.fiscalYear <= currentRun.currentFY);
         delivered.forEach(batch => {
@@ -37,13 +42,24 @@ export class ProductionSystem {
         // Remove delivered from queue
         currentRun.productionQueue = currentRun.productionQueue.filter(b => b.fiscalYear > currentRun.currentFY);
 
-        // Degrade readiness slightly over time if not in homeland/reserve
+        const readinessMult = currentRun.activeDoctrine?.effect.readinessMultiplier ?? 1.0;
+
         Object.values(currentRun.theaters).forEach(theater => {
-            if (theater.id !== 'homeland' && theater.id !== 'reserve') {
-                theater.readiness = Math.max(0, theater.readiness - 2);
+            if (theater.id === 'homeland' || theater.id === 'reserve') {
+                // Quiet theaters recover; doctrine scales how fast.
+                const recovery = 4 * readinessMult;
+                theater.readiness = Math.min(100, theater.readiness + recovery);
+            } else {
+                // Forward theaters still grind down, but good doctrines soften it.
+                const loss = 2 / readinessMult;
+                theater.readiness = Math.max(0, theater.readiness - loss);
             }
         });
-        
+
+        // Active theater gets a doctrine-scaled readiness patch after each FY.
+        const active = currentRun.theaters.active;
+        active.readiness = Math.min(100, active.readiness + 3 * readinessMult);
+
         currentRun.updateGlobalReadiness();
     }
 }

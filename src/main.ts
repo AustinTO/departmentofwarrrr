@@ -7,11 +7,28 @@ import { MansionScene } from './scenes/MansionScene';
 import { DoctrineScene } from './scenes/DoctrineScene';
 import { EventScene } from './scenes/EventScene';
 import { PreloaderScene } from './scenes/PreloaderScene';
+import { TitleScene } from './scenes/TitleScene';
 
 import { PressReleaseScene } from './scenes/PressReleaseScene';
 import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { PinballPhysicsLab } from './scenes/PinballPhysicsLab';
 import { App } from '@capacitor/app';
+import { currentRun } from './state/RunState';
+import { WeaponType } from './game/config';
+
+const hash = window.location.hash;
+if (hash === '#arsenal') {
+    // QA shortcut: unlock full campaign arsenal + boards for playtesting.
+    currentRun.currentFY = 2029;
+    currentRun.mansionsBuilt = 8;
+    currentRun.unlockedWeapons = [];
+    currentRun.unlockedBoards = ['appropriations'];
+    currentRun.syncUnlocks();
+    [WeaponType.HYDRA, WeaponType.RAILGUN, WeaponType.SEEKER, WeaponType.INTERCEPTOR, WeaponType.INTERCEPTOR_BLOCK_II]
+        .forEach((type) => {
+            currentRun.theaters.active.inventory[type] = Math.max(currentRun.theaters.active.inventory[type] || 0, 20);
+        });
+}
 
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
@@ -27,17 +44,15 @@ const config: Phaser.Types.Core.GameConfig = {
         arcade: {
             gravity: { x: 0, y: 0 },
             debug: false
-        },
-        matter: {
-            gravity: { x: 0, y: 1 },
-            debug: false
         }
     },
-    scene: window.location.hash === '#planck-lab'
+    scene: hash === '#planck-lab'
         ? [PinballPhysicsLab]
-        : window.location.hash === '#procurement'
-            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene]
-            : [BootScene, PreloaderScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab]
+        : (hash === '#procurement' || hash.includes('author'))
+            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene]
+            : hash === '#arsenal'
+                ? [BootScene, PreloaderScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene]
+                : [BootScene, PreloaderScene, TitleScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab]
 };
 
 const game = new Phaser.Game(config);

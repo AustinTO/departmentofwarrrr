@@ -8,7 +8,10 @@
       body {
         margin: 0;
         padding: 0;
-        background: radial-gradient(circle at center, #102a3a 0%, #020509 72%);
+        background:
+          radial-gradient(ellipse at 50% 18%, rgba(37, 158, 190, 0.24), transparent 38%),
+          radial-gradient(ellipse at 12% 84%, rgba(234, 175, 65, 0.1), transparent 28%),
+          linear-gradient(145deg, #071923 0%, #020509 62%, #080b14 100%);
         overflow: hidden;
         display: flex;
         justify-content: center;
@@ -26,10 +29,20 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        filter: drop-shadow(0 0 28px rgba(43, 200, 255, 0.18));
+        filter: drop-shadow(0 0 34px rgba(43, 200, 255, 0.25));
       }
 
-      canvas { image-rendering: auto; }
+      canvas {
+        image-rendering: auto;
+        border-radius: 18px;
+        box-shadow:
+          0 0 0 1px rgba(125, 244, 255, 0.25),
+          0 24px 72px rgba(0, 0, 0, 0.55);
+      }
+
+      @media (max-width: 700px) {
+        canvas { border-radius: 0; box-shadow: none; }
+      }
     </style>
   </head>
   <body>

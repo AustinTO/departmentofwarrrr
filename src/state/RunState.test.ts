@@ -9,7 +9,7 @@ describe('RunState inventory transfers', () => {
         expect(run.transferInventory('indo_pacific', 'active', WeaponType.INTERCEPTOR, 10)).toBe(true);
 
         expect(run.theaters.indo_pacific.inventory[WeaponType.INTERCEPTOR]).toBe(110);
-        expect(run.theaters.active.inventory[WeaponType.INTERCEPTOR]).toBe(50);
+        expect(run.theaters.active.inventory[WeaponType.INTERCEPTOR]).toBe(65);
         expect(run.theaters.indo_pacific.readiness).toBeLessThan(initialReadiness);
         expect(localStorage.getItem('warrr_save_v1')).not.toBeNull();
     });
@@ -25,10 +25,10 @@ describe('RunState inventory transfers', () => {
 describe('RunState campaign lifecycle', () => {
     it('builds mansions one at a time with an escalating threshold', () => {
         const run = new RunState();
-        run.contractorProfit = 8_000_000_000;
+        run.contractorProfit = 2_000_000_000;
         run.reconcileMansions();
         expect(run.mansionsBuilt).toBe(1);
-        expect(run.mansionCost()).toBeGreaterThan(8_000_000_000);
+        expect(run.mansionCost()).toBeGreaterThan(2_000_000_000);
 
         run.contractorProfit = run.mansionCost();
         run.reconcileMansions();
@@ -64,6 +64,7 @@ describe('RunState campaign lifecycle', () => {
         expect(run.currentFY).toBe(2026);
         expect(run.contractorProfit).toBe(0);
         expect(run.activeDoctrine).toBeNull();
-        expect(run.theaters.active.inventory[WeaponType.INTERCEPTOR]).toBe(40);
+        expect(run.theaters.active.inventory[WeaponType.INTERCEPTOR]).toBe(55);
+        expect(run.estateLedger).toEqual([]);
     });
 });

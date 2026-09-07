@@ -73,23 +73,30 @@ export class ReadinessScene extends Phaser.Scene {
             }).setOrigin(1, 0);
 
             // Munition counts
-            const interceptors = theater.inventory[WeaponType.INTERCEPTOR] || 0;
-            const blockII = theater.inventory[WeaponType.INTERCEPTOR_BLOCK_II] || 0;
+            const lines = [
+                [`SM-3: ${theater.inventory[WeaponType.INTERCEPTOR] || 0}`, WeaponType.INTERCEPTOR, 0x006666],
+                [`SM-6: ${theater.inventory[WeaponType.INTERCEPTOR_BLOCK_II] || 0}`, WeaponType.INTERCEPTOR_BLOCK_II, 0x666600],
+                [`HYDRA: ${theater.inventory[WeaponType.HYDRA] || 0}`, WeaponType.HYDRA, 0x884422],
+                [`RAIL: ${theater.inventory[WeaponType.RAILGUN] || 0}`, WeaponType.RAILGUN, 0x226688],
+                [`SEEKER: ${theater.inventory[WeaponType.SEEKER] || 0}`, WeaponType.SEEKER, 0x228866]
+            ] as const;
 
-            this.add.text(80, y + 20, `FREEDOM INTERCEPTOR: ${interceptors}`, { fontSize: '36px', color: '#ffffff' });
-            this.add.text(80, y + 80, `BLOCK II: ${blockII}`, { fontSize: '36px', color: '#ffaa00' });
+            lines.forEach(([label], idx) => {
+                this.add.text(80, y - 10 + idx * 32, label, {
+                    fontSize: '26px',
+                    color: idx < 2 ? (idx === 0 ? '#ffffff' : '#ffaa00') : '#cfe8ff'
+                });
+            });
 
-            // Transfer buttons (Simplified for prototype)
             if (theater.id !== 'active') {
-                this.add.rectangle(width - 120, y + 20, 180, 60, 0x006666)
-                    .setInteractive({ useHandCursor: true })
-                    .on('pointerdown', () => this.handleTransfer(theater.id, 'active', WeaponType.INTERCEPTOR));
-                this.add.text(width - 120, y + 20, 'TRANSFER F-INT', { fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
-
-                this.add.rectangle(width - 120, y + 90, 180, 60, 0x666600)
-                    .setInteractive({ useHandCursor: true })
-                    .on('pointerdown', () => this.handleTransfer(theater.id, 'active', WeaponType.INTERCEPTOR_BLOCK_II));
-                this.add.text(width - 120, y + 90, 'TRANSFER B-II', { fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
+                lines.forEach(([, type, color], idx) => {
+                    const bx = width - 120;
+                    const by = y - 20 + idx * 36;
+                    this.add.rectangle(bx, by, 180, 32, color)
+                        .setInteractive({ useHandCursor: true })
+                        .on('pointerdown', () => this.handleTransfer(theater.id, 'active', type));
+                    this.add.text(bx, by, 'XFER', { fontSize: '18px', color: '#ffffff' }).setOrigin(0.5);
+                });
             }
         });
     }
