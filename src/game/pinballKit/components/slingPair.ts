@@ -7,13 +7,13 @@ import { boxSling, type KitEmit } from '../types';
  */
 export function slingPair(): KitEmit {
     // Midpoints of left/right sling-face walls (art space).
-    const left = artPoint(305, 1320);
-    const right = artPoint(733, 1320);
+    const left = artPoint(310, 1320);
+    const right = artPoint(770, 1320);
     const deg = (d: number) => (d * Math.PI) / 180;
     return {
         objects: [
-            boxSling('left-sling', left[0], left[1], 118, 22, deg(38)),
-            boxSling('right-sling', right[0], right[1], 118, 22, deg(-38))
+            boxSling('left-sling', left[0], left[1], 118, 22, deg(55)),
+            boxSling('right-sling', right[0], right[1], 118, 22, deg(-55))
         ]
     };
 }

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Bake kit geometry into a skinned playfield PNG.
 
+Theme: Department of War — Appropriations table. Olive-drab felt, brass
+trim, stenciled mil-spec labels, a faint roundel under the bumper island.
+Hardware stays readable: chrome cabinet rails, molded teal ramps, red sling
+rubber, black tunnel scoop, open-ring lane markers.
+
 Usage:
-  npx tsx -e "import {writeFileSync} from 'fs'; import {assembleAppropriationsKit, resetAppropriationsKitCache} from './src/game/pinballKit/recipes/appropriations.ts'; resetAppropriationsKitCache(); const a=assembleAppropriationsKit(); writeFileSync('/tmp/kit-table.json', JSON.stringify({objects:a.objects,bumpers:a.bumperMarkers??[]}));"
   python3 scripts/bakePinballPlayfield.py
+(the script re-exports fresh kit geometry itself — never bake from a stale dump)
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "public" / "assets" / "pinball"
 ORIGIN_Y = 280
 W, H = 1080, 1600
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
 def art(pts):
@@ -41,6 +47,37 @@ def offset_poly(pts, dist):
         nx, ny = -dy / length, dx / length
         out.append((pts[i][0] + nx * dist, pts[i][1] + ny * dist))
     return out
+
+
+def star_pts(cx, cy, r_out, r_in, n=5, rot=-90.0):
+    pts = []
+    for i in range(n * 2):
+        r = r_out if i % 2 == 0 else r_in
+        a = math.radians(rot + i * 180.0 / n)
+        pts.append((cx + math.cos(a) * r, cy + math.sin(a) * r))
+    return pts
+
+
+def stencil_text(text, size, fill, tracking=6):
+    """Render letter-spaced mil-spec stencil text on a transparent strip."""
+    try:
+        font = ImageFont.truetype(FONT_PATH, size)
+    except Exception:
+        font = ImageFont.load_default()
+    widths = [font.getlength(ch) for ch in text]
+    total = sum(widths) + tracking * max(0, len(text) - 1)
+    img = Image.new("RGBA", (int(total) + 12, size + 20), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img, "RGBA")
+    x = 6
+    for ch, w in zip(text, widths):
+        d.text((x, 8), ch, font=font, fill=fill)
+        x += w + tracking
+    return img
+
+
+def paste_rotated(base_img, strip, cx, cy, angle_deg):
+    rot = strip.rotate(-angle_deg, expand=True, resample=Image.Resampling.BICUBIC)
+    base_img.paste(rot, (int(cx - rot.width / 2), int(cy - rot.height / 2)), rot)
 
 
 def make_lane_marker(size, rim, glow):
@@ -78,8 +115,26 @@ def make_tunnel_scoop(size, rim, glow):
     return img
 
 
+def export_kit_table() -> Path:
+    """Always refresh kit geometry before baking — never reuse a stale dump."""
+    out = ROOT / "tmp" / "kit-table.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = (
+        "import { writeFileSync } from 'fs';"
+        "import { assembleAppropriationsKit, resetAppropriationsKitCache } from './src/game/pinballKit/recipes/appropriations.ts';"
+        "resetAppropriationsKitCache();"
+        "const a = assembleAppropriationsKit();"
+        f"writeFileSync({json.dumps(str(out))}, JSON.stringify({{objects:a.objects,bumpers:a.bumperMarkers??[]}}));"
+    )
+    import subprocess
+
+    subprocess.check_call(["npx", "tsx", "-e", cmd], cwd=ROOT)
+    return out
+
+
 def main():
-    data = json.loads(Path("/tmp/kit-table.json").read_text())
+    table_path = export_kit_table()
+    data = json.loads(table_path.read_text())
     objects = data["objects"]
     bumpers = data["bumpers"]
     mouths = {
@@ -88,6 +143,7 @@ def main():
         "tunnel": make_tunnel_scoop(256, (150, 80, 200), (230, 180, 255)),
     }
 
+    # ---- Base: olive-drab felt with vignette + grain -----------------------
     random.seed(5)
     base = Image.new("RGBA", (W, H), (16, 42, 38, 255))
     px = base.load()
@@ -98,11 +154,12 @@ def main():
             dy = (y - H / 2) / (H * 0.5)
             vig = max(0.5, 1 - 0.32 * (dx * dx + dy * dy))
             n = random.randint(-11, 11)
-            r = int((12 + t * 5 + n * 0.3) * vig)
-            g = int((52 + t * 18 + n) * vig)
-            b = int((40 + t * 8 + n * 0.4) * vig)
+            r = int((14 + t * 5 + n * 0.3) * vig)
+            g = int((50 + t * 17 + n) * vig)
+            b = int((38 + t * 8 + n * 0.4) * vig)
             px[x, y] = (max(0, r), max(0, g), max(0, b), 255)
 
+    # ---- Wood + brass cabinet frame ---------------------------------------
     fr = ImageDraw.Draw(base, "RGBA")
     for box, col in [
         ((0, 0, 64, H), (48, 30, 18, 255)),
@@ -113,15 +170,28 @@ def main():
         fr.rectangle(list(box), fill=col)
     fr.rectangle([64, 48, W - 64, H - 48], outline=(180, 150, 90, 160), width=3)
 
+    # ---- Faint roundel under the bumper island -----------------------------
+    deco = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    dd = ImageDraw.Draw(deco, "RGBA")
+    rcx, rcy = 540, 470
+    dd.ellipse([rcx - 250, rcy - 250, rcx + 250, rcy + 250], outline=(214, 178, 90, 34), width=10)
+    dd.ellipse([rcx - 205, rcy - 205, rcx + 205, rcy + 205], outline=(214, 178, 90, 26), width=4)
+    dd.polygon(star_pts(rcx, rcy, 165, 66), fill=(214, 178, 90, 20))
+    dd.polygon(star_pts(rcx, rcy, 165, 66), outline=(214, 178, 90, 34))
+    base = Image.alpha_composite(base, deco)
+
+    # ---- Marquee ------------------------------------------------------------
     ins = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     idr = ImageDraw.Draw(ins, "RGBA")
     idr.rounded_rectangle([88, 58, 992, 205], radius=24, fill=(8, 16, 22, 220))
     idr.rounded_rectangle([110, 78, 970, 185], radius=16, fill=(28, 55, 65, 170))
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-    except Exception:
-        font = ImageFont.load_default()
-    idr.text((540, 118), "APPROPRIATIONS", font=font, fill=(255, 214, 110, 230), anchor="mm")
+    idr.rectangle([110, 78, 970, 185], outline=(180, 150, 90, 120), width=2)
+    title = stencil_text("APPROPRIATIONS", 34, (255, 214, 110, 235), tracking=10)
+    ins.paste(title, (int(540 - title.width / 2), 92), title)
+    sub = stencil_text("DEPARTMENT OF WAR - PROCUREMENT DIVISION", 17, (150, 200, 190, 190), tracking=5)
+    ins.paste(sub, (int(540 - sub.width / 2), 148), sub)
+    for sx in (150, 930):
+        idr.polygon(star_pts(sx, 131, 22, 9), fill=(255, 214, 110, 200))
     base = Image.alpha_composite(base, ins)
 
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -160,8 +230,8 @@ def main():
         )
 
     def molded_ramp(op, ip):
-        outer_wall = offset_poly(op, 10)
-        inner_wall = offset_poly(ip, -10)
+        outer_wall = offset_poly(op, 6)
+        inner_wall = offset_poly(ip, -6)
         body = outer_wall + list(reversed(inner_wall))
         shadow = [(x + 3, y + 5) for x, y in body]
         d.polygon(shadow, fill=(0, 0, 0, 70))
@@ -170,14 +240,14 @@ def main():
         d.polygon(floor, fill=(12, 40, 52, 255))
         mid = [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(op, ip)]
         if len(mid) >= 2:
-            d.line(mid, fill=(70, 210, 230, 70), width=18)
-            d.line(mid, fill=(200, 255, 255, 45), width=5)
-        d.line(op, fill=(8, 20, 28, 255), width=14)
-        d.line(ip, fill=(8, 20, 28, 255), width=14)
-        d.line(op, fill=(90, 200, 215, 255), width=6)
-        d.line(ip, fill=(90, 200, 215, 255), width=6)
-        d.line(op, fill=(220, 255, 255, 160), width=2)
-        d.line(ip, fill=(220, 255, 255, 160), width=2)
+            d.line(mid, fill=(70, 210, 230, 55), width=10)
+            d.line(mid, fill=(200, 255, 255, 40), width=3)
+        d.line(op, fill=(8, 20, 28, 255), width=10)
+        d.line(ip, fill=(8, 20, 28, 255), width=10)
+        d.line(op, fill=(90, 200, 215, 255), width=4)
+        d.line(ip, fill=(90, 200, 215, 255), width=4)
+        d.line(op, fill=(220, 255, 255, 150), width=1)
+        d.line(ip, fill=(220, 255, 255, 150), width=1)
 
     slides = [o for o in objects if o.get("kind") == "slide" and o.get("points")]
     by: dict[str, list] = {}
@@ -185,47 +255,16 @@ def main():
         by.setdefault(f"{s.get('layer', 'playfield')}:{s.get('linkId') or s['id']}", []).append(s)
 
     consumed: set[str] = set()
+    ramp_labels: list[tuple[list, str]] = []
     for group in by.values():
         outer = next((g for g in group if g["id"].endswith("-outer")), None)
         inner = next((g for g in group if g["id"].endswith("-inner")), None)
         if not outer or not inner:
             continue
         op, ip = art(outer["points"]), art(inner["points"])
-        if outer.get("layer") == "overpass":
-            d.line(op, fill=(0, 0, 0, 55), width=9)
-            d.line(ip, fill=(0, 0, 0, 55), width=9)
-
-            def dash(pts):
-                for i in range(len(pts) - 1):
-                    x0, y0 = pts[i]
-                    x1, y1 = pts[i + 1]
-                    length = math.hypot(x1 - x0, y1 - y0) or 1
-                    ux, uy = (x1 - x0) / length, (y1 - y0) / length
-                    t = 0.0
-                    on = True
-                    while t < length:
-                        seg = min(16 if on else 10, length - t)
-                        if on:
-                            p0 = (x0 + ux * t, y0 + uy * t)
-                            p1 = (x0 + ux * (t + seg), y0 + uy * (t + seg))
-                            d.line([p0, p1], fill=(255, 168, 32, 255), width=7)
-                            d.line([p0, p1], fill=(255, 230, 160, 230), width=3)
-                        t += seg
-                        on = not on
-
-            dash(op)
-            dash(ip)
-            n = min(len(op), len(ip))
-            for i in range(0, n, 2):
-                x = (op[i][0] + ip[i][0]) / 2
-                y = (op[i][1] + ip[i][1]) / 2
-                d.rectangle([x - 4, y + 8, x + 4, y + 34], fill=(150, 160, 170, 255))
-                d.ellipse([x - 12, y + 28, x + 12, y + 42], fill=(100, 110, 120, 255))
-                d.ellipse([x - 9, y - 2, x + 9, y + 16], fill=(210, 220, 230, 255))
-            for g in group:
-                consumed.add(g["id"])
-            continue
         molded_ramp(op, ip)
+        link = outer.get("linkId") or outer["id"].replace("-outer", "")
+        ramp_labels.append((op, ip, link))
         for g in group:
             consumed.add(g["id"])
 
@@ -260,9 +299,9 @@ def main():
         # Default leftover walls: thin dark plastic, never chrome.
         plastic_guide(pts, 12, face=False)
 
-    # Fill sling triangles from apex + legs (dark body, red rubber on face already stroked).
+    # Fill sling triangles from apex + legs (dark body, red rubber stroked later).
     by_id = {o["id"]: o for o in objects}
-    for side, s in (("left", 1), ("right", -1)):
+    for side in ("left", "right"):
         leg = by_id.get(f"{side}-sling-leg")
         face = by_id.get(f"{side}-sling-face")
         if not leg or not face or not leg.get("points") or not face.get("points"):
@@ -312,6 +351,61 @@ def main():
 
     base = Image.alpha_composite(base, layer.filter(ImageFilter.GaussianBlur(0.45)))
     base = Image.alpha_composite(base, layer)
+
+    # ---- Stenciled decoration layer (above hardware, low alpha) ------------
+    deco2 = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+    # Ramp name stencils along each channel midline.
+    for op, ip, link in ramp_labels:
+        label = {"left-ramp": "OVERSIGHT BYPASS", "right-ramp": "EMERGENCY FUNDING"}.get(link)
+        if not label:
+            continue
+        n = min(len(op), len(ip))
+        i0 = int(n * 0.45)
+        i1 = int(n * 0.62)
+        mx0, my0 = (op[i0][0] + ip[i0][0]) / 2, (op[i0][1] + ip[i0][1]) / 2
+        mx1, my1 = (op[i1][0] + ip[i1][0]) / 2, (op[i1][1] + ip[i1][1]) / 2
+        ang = math.degrees(math.atan2(my1 - my0, mx1 - mx0))
+        # Keep text upright-ish: flip if it would read upside down.
+        if ang > 90 or ang < -90:
+            ang += 180
+        strip = stencil_text(label, 20, (220, 240, 235, 95), tracking=4)
+        paste_rotated(deco2, strip, (mx0 + mx1) / 2, (my0 + my1) / 2, ang)
+
+        # Chevron arrows at the entrance mouth pointing up-channel.
+        ex, ey = (op[0][0] + ip[0][0]) / 2, (op[0][1] + ip[0][1]) / 2
+        tx, ty = (op[2][0] + ip[2][0]) / 2, (op[2][1] + ip[2][1]) / 2
+        ux, uy = tx - ex, ty - ey
+        ln = math.hypot(ux, uy) or 1
+        ux, uy = ux / ln, uy / ln
+        pxn, pyn = -uy, ux
+        cd = ImageDraw.Draw(deco2, "RGBA")
+        for k in range(2):
+            bx = ex + ux * (26 + k * 26)
+            byy = ey + uy * (26 + k * 26)
+            tip = (bx + ux * 16, byy + uy * 16)
+            left = (bx - ux * 8 + pxn * 13, byy - uy * 8 + pyn * 13)
+            right = (bx - ux * 8 - pxn * 13, byy - uy * 8 - pyn * 13)
+            cd.polygon([tip, left, right], fill=(140, 255, 180, 120))
+
+    # Outlane / inlane stencils.
+    for text, lx, ly, ang in [
+        ("AUDIT", 118, 1080, -90),
+        ("AUDIT", 962, 1080, 90),
+        ("KICKBACK", 205, 1060, -90),
+        ("KICKBACK", 875, 1060, 90),
+    ]:
+        strip = stencil_text(text, 18, (255, 220, 130, 80), tracking=5)
+        paste_rotated(deco2, strip, lx, ly, ang)
+
+    # Apron stencil.
+    apron_strip = stencil_text("DEPARTMENT OF WAR", 30, (255, 214, 110, 110), tracking=8)
+    deco2.paste(apron_strip, (int(540 - apron_strip.width / 2), 1180), apron_strip)
+    apron_sub = stencil_text("NO BAILOUTS BELOW THIS LINE", 15, (200, 210, 215, 80), tracking=5)
+    deco2.paste(apron_sub, (int(540 - apron_sub.width / 2), 1228), apron_sub)
+
+    base = Image.alpha_composite(base, deco2)
+
     base = ImageEnhance.Contrast(base).enhance(1.12)
     base = ImageEnhance.Color(base).enhance(1.18)
 

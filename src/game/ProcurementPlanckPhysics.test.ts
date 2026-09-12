@@ -290,9 +290,11 @@ describe('upgraded pinball rails', () => {
     });
 
     it('keeps playfield rails clear of the plunger channel', () => {
+        // top-rail intentionally spans the full width — it seals the top of
+        // the table (including over the plunger tube) so nothing escapes.
         const reserved = new Set([
             'shooter-left', 'shooter-oneway', 'shooter-exit', 'right-rail', 'right-bottom-rail',
-            'right-tunnel-hood'
+            'top-rail'
         ]);
         Object.values(PINBALL_BOARDS).forEach((board) => {
             board.table

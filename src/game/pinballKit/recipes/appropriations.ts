@@ -1,7 +1,6 @@
 import { apron } from '../components/apron';
 import { bumper } from '../components/bumper';
 import { cabinet } from '../components/cabinet';
-import { crossWire } from '../components/crossWire';
 import { dropTargets } from '../components/dropTargets';
 import { dualRamp } from '../components/dualRamp';
 import { flippers } from '../components/flippers';
@@ -11,39 +10,46 @@ import { shooterLane } from '../components/shooterLane';
 import { skillGate } from '../components/skillGate';
 import { slingPair } from '../components/slingPair';
 import { assembleBoard, type BoardAssembly } from '../assemble';
+import { joinBeziers } from '../geometry';
 import type { KitBuilder } from '../types';
-import { artPts, joinBeziers } from '../geometry';
-import { wall } from '../types';
 
 /**
- * Appropriations live table — flipper-reachable ramps, clear bumper island.
+ * Appropriations table — clean, playable layout.
+ *
+ * Playfield art space: x 0..1080, y 0..1600 (origin y=280 in game).
+ * Plunger tube: x 968..1052. Open play: x 70..968.
+ *
+ * Layout zones:
+ *   y 0..230    marquee / skill rollover (plunge sweeps left through here)
+ *   y 240..740  bumper island (emergency → jackpot → sole-source/req-creep)
+ *   y 800..1150 mid play — target bank, scoop tunnel, satellite bumpers
+ *   y 1150..1520 lower play — ramp mouths, slings, outlanes, flippers
  */
 
-/** Narrower mouths, thin mid-run, open exit spout. */
-const RAMP_GAP = { enter: 112, mid: 78, exit: 120 };
-const WIRE_GAP = { enter: 100, mid: 78, exit: 100 };
+/** Rideable channels — narrow mid-run, mouths just wide enough to catch. */
+const RAMP_GAP = { enter: 100, mid: 72, exit: 86 };
 
-/** Left ramp: mouth sits on a natural up-left shot from the left flipper tip. */
+/**
+ * Left ramp: natural up-left shot from the left flipper tip.
+ * Climbs the left wall and ends in an open spout — physics flies the ball
+ * off the end into the bumper island (no top curl = no dead corners).
+ * Centerline stays outboard so bumper/play lanes stay ball-clear.
+ */
 const LEFT_RAMP_CENTER = joinBeziers([
-    { a: [340, 1205], ctrl: [300, 1060], b: [265, 940], steps: 6 },
-    { a: [265, 940], ctrl: [240, 820], b: [245, 720], steps: 5 },
-    { a: [245, 720], ctrl: [260, 560], b: [285, 420], steps: 6 },
-    { a: [285, 420], ctrl: [300, 340], b: [315, 280], steps: 5 }
+    { a: [280, 1180], ctrl: [220, 1020], b: [175, 880], steps: 6 },
+    { a: [175, 880], ctrl: [145, 720], b: [150, 560], steps: 5 },
+    { a: [150, 560], ctrl: [148, 440], b: [160, 320], steps: 5 }
 ]);
 
-/** Right ramp: mirror, clear of shooter tube. */
+/**
+ * Right ramp: mirror shot from the right flipper tip, clear of the plunger tube.
+ * Climbs the right wall and ends in an open spout below the skill rollover —
+ * a soft plunge can drop in here for the skill shot (bidirectional entry).
+ */
 const RIGHT_RAMP_CENTER = joinBeziers([
-    { a: [740, 1205], ctrl: [780, 1060], b: [815, 940], steps: 6 },
-    { a: [815, 940], ctrl: [840, 820], b: [835, 720], steps: 5 },
-    { a: [835, 720], ctrl: [820, 560], b: [795, 420], steps: 6 },
-    { a: [795, 420], ctrl: [780, 340], b: [765, 280], steps: 5 }
-]);
-
-const CROSS_WIRE_CENTER = joinBeziers([
-    // Mouths sit slightly inside each side-ramp channel so a climb can divert onto the wire.
-    { a: [252, 718], ctrl: [380, 688], b: [480, 678], steps: 5 },
-    { a: [480, 678], ctrl: [600, 678], b: [700, 688], steps: 5 },
-    { a: [700, 688], ctrl: [760, 700], b: [828, 718], steps: 4 }
+    { a: [800, 1180], ctrl: [850, 1020], b: [885, 880], steps: 6 },
+    { a: [885, 880], ctrl: [910, 720], b: [905, 560], steps: 5 },
+    { a: [905, 560], ctrl: [900, 440], b: [890, 320], steps: 5 }
 ]);
 
 export const APPROPRIATIONS_RECIPE: KitBuilder[] = [
@@ -56,9 +62,9 @@ export const APPROPRIATIONS_RECIPE: KitBuilder[] = [
             id: 'left-ramp',
             centerline: LEFT_RAMP_CENTER,
             gapProfile: RAMP_GAP,
-            mouthRadius: 22,
-            enterMouth: [340, 1190],
-            exitMouth: [315, 280],
+            mouthRadius: 24,
+            enterMouth: [280, 1165],
+            exitMouth: [160, 300],
             gates: false
         }),
 
@@ -67,66 +73,51 @@ export const APPROPRIATIONS_RECIPE: KitBuilder[] = [
             id: 'right-ramp',
             centerline: RIGHT_RAMP_CENTER,
             gapProfile: RAMP_GAP,
-            // Narrower mouth — still clear from the right flipper.
-            mouthRadius: 22,
-            enterMouth: [740, 1190],
-            exitMouth: [765, 280],
+            mouthRadius: 24,
+            enterMouth: [800, 1165],
+            exitMouth: [890, 300],
             gates: false
         }),
 
-    () =>
-        crossWire({
-            id: 'cross-wire',
-            centerline: CROSS_WIRE_CENTER,
-            channelGap: WIRE_GAP.mid,
-            // Slightly larger mouths so a ramp graze can catch the wire.
-            mouthRadius: 24
-        }),
-
+    // Loop scoop — mid-play warp, reachable from both flippers.
+    // Exit dumps onto the left flipper for an immediate recovery shot.
     () =>
         scoopTunnel({
-            id: 'left-tunnel',
+            id: 'mid-scoop',
             linkId: 'loop',
-            // Sit on the left-ramp exit so finishing the ramp actually warps
-            enterArt: [315, 275],
-            // Dump left of center above the left bat — never into the tip gap.
-            exitArt: [430, 980],
-            mouthRadius: 32
+            enterArt: [620, 1000],
+            exitArt: [430, 1100],
+            mouthRadius: 30
         }),
 
-    // Decorative upper-right flourish — clear of right-ramp spout AND shooter exit loft.
-    () => ({
-        objects: [
-            wall(
-                'right-tunnel-hood',
-                artPts([910, 95], [870, 70], [830, 85], [810, 120])
-            )
-        ]
-    }),
+    // Bumper island — pulled inward so lanes between bumpers and narrow
+    // ramps stay ≥ ball diameter clear.
+    () => bumper({ id: 'emergency-supplemental', artX: 540, artY: 330, radius: 22 }),
+    () => bumper({ id: 'jackpot', artX: 540, artY: 510, radius: 40 }),
+    () => bumper({ id: 'sole-source', artX: 440, artY: 690, radius: 30 }),
+    () => bumper({ id: 'requirements-creep', artX: 640, artY: 690, radius: 30 }),
+    // Mid-play satellites — further center-side of the ramp channels.
+    () => bumper({ id: 'audit-failed', artX: 420, artY: 1040, radius: 26 }),
+    () => bumper({ id: 'fixed-price', artX: 660, artY: 1040, radius: 26 }),
 
-    // Bumper island — kept above the sling/flipper feed zone
-    () => bumper({ id: 'emergency-supplemental', artX: 540, artY: 195, radius: 22 }),
-    () => bumper({ id: 'jackpot', artX: 540, artY: 400, radius: 46 }),
-    () => bumper({ id: 'sole-source', artX: 455, artY: 640, radius: 32 }),
-    () => bumper({ id: 'requirements-creep', artX: 625, artY: 640, radius: 32 }),
-    () => bumper({ id: 'audit-failed', artX: 480, artY: 920, radius: 30 }),
-    () => bumper({ id: 'fixed-price', artX: 600, artY: 920, radius: 28 }),
-
+    // Skill rollover above the right-ramp spout — a soft plunge drops through
+    // here into the ramp mouth for the skill shot.
     () =>
         skillGate({
             id: 'skill-gate',
-            artX: 640,
-            artY: 118,
-            width: 110,
-            height: 26
+            artX: 875,
+            artY: 250,
+            width: 90,
+            height: 22
         }),
 
-    () => dropTargets({ id: 'target', artX: 540, artY: 505, count: 2, spacing: 140 }),
+    // Drop-target bank between the bumper island and mid play.
+    () => dropTargets({ id: 'target', artX: 540, artY: 860, count: 3, spacing: 90 }),
 
     () => slingPair(),
-    // Posts cap the outboard sling triangles.
-    () => post({ id: 'left-apron-post', artX: 255, artY: 1225, radius: 14 }),
-    () => post({ id: 'right-apron-post', artX: 783, artY: 1225, radius: 14 }),
+    // Posts guard the target bank flanks (kept clear of the ramp mouth lanes).
+    () => post({ id: 'left-bank-post', artX: 380, artY: 870, radius: 13 }),
+    () => post({ id: 'right-bank-post', artX: 700, artY: 870, radius: 13 }),
     () => flippers()
 ];
 

@@ -11,7 +11,6 @@ import {
 } from './pinballKit';
 import { dualChannel, artPoint } from './pinballKit/geometry';
 import { dualRamp } from './pinballKit/components/dualRamp';
-import { crossWire } from './pinballKit/components/crossWire';
 import { cabinet } from './pinballKit/components/cabinet';
 import { flippers } from './pinballKit/components/flippers';
 import { resetBumperRegistry, bumper } from './pinballKit/components/bumper';
@@ -41,14 +40,14 @@ describe('pinballKit geometry', () => {
     it('tapers wide entrances into a thinner mid-run', () => {
         const { outer, inner } = dualChannel(
             Array.from({ length: 21 }, (_, i) => [200, 1200 - i * 40] as [number, number]),
-            { enter: 150, mid: 78, exit: 100 }
+            { enter: 130, mid: 72, exit: 90 }
         );
         const gapAt = (i: number) =>
             Math.hypot(outer[i][0] - inner[i][0], outer[i][1] - inner[i][1]);
-        expect(gapAt(0)).toBeGreaterThan(140);
-        expect(gapAt(10)).toBeLessThan(90);
+        expect(gapAt(0)).toBeGreaterThan(120);
+        expect(gapAt(10)).toBeLessThan(80);
         expect(gapAt(10)).toBeGreaterThanOrEqual(MIN_RIDE_GAP - 0.01);
-        expect(gapAt(20)).toBeGreaterThan(95);
+        expect(gapAt(20)).toBeGreaterThan(85);
     });
 });
 
@@ -80,20 +79,6 @@ describe('pinballKit components', () => {
         expect(enter.sensor).toBe('entrance');
     });
 
-    it('crossWire marks overpass layer', () => {
-        const { objects } = crossWire({
-            id: 'cross-wire',
-            centerline: [
-                [200, 790],
-                [540, 760],
-                [880, 790]
-            ],
-            channelGap: 120,
-            mouthRadius: 20
-        });
-        expect(objects.filter((e) => e.kind === 'slide' && e.layer === 'overpass').length).toBeGreaterThanOrEqual(2);
-    });
-
     it('flippers use physics-required ids', () => {
         const ids = flippers().objects.map((e) => e.id);
         expect(ids).toContain('left-flipper');
@@ -112,12 +97,11 @@ describe('appropriations kit assembly', () => {
         resetBumperRegistry();
     });
 
-    it('includes cabinet, ramps, cross-wire, tunnel, flippers, drain', () => {
+    it('includes cabinet, ramps, tunnel, flippers, drain', () => {
         const { objects, tunnels, bumperMarkers } = assembleAppropriationsKit();
         expect(objects.some((e) => e.id === 'left-rail')).toBe(true);
         expect(objects.some((e) => e.id === 'left-ramp-outer')).toBe(true);
         expect(objects.some((e) => e.id === 'right-ramp-outer')).toBe(true);
-        expect(objects.some((e) => e.id === 'cross-wire-outer' && e.layer === 'overpass')).toBe(true);
         expect(objects.some((e) => e.id.startsWith('tunnel-'))).toBe(true);
         expect(objects.some((e) => e.id === 'left-flipper')).toBe(true);
         expect(objects.some((e) => e.kind === 'drain')).toBe(true);
@@ -157,9 +141,10 @@ describe('appropriations kit assembly', () => {
                 outer.points![mid][0] - inner.points![mid][0],
                 outer.points![mid][1] - inner.points![mid][1]
             );
-            expect(enterGap, side).toBeLessThan(125);
+            expect(enterGap, side).toBeLessThan(110);
             expect(enterGap, side).toBeGreaterThanOrEqual(MIN_CHANNEL_GAP - 0.01);
             expect(midGap, side).toBeLessThan(enterGap);
+            expect(midGap, side).toBeLessThanOrEqual(78);
         }
     });
 
@@ -188,10 +173,10 @@ describe('appropriations kit assembly', () => {
     it('merges kit bumper markers onto satire defs', () => {
         const raw = [{ id: 'jackpot', x: 0, y: 0, radius: 1 }];
         const merged = mergeBumpersFromKit(raw);
-        const expected = artPoint(540, 400);
+        const expected = artPoint(540, 510);
         expect(merged[0].x).toBe(expected[0]);
         expect(merged[0].y).toBe(expected[1]);
-        expect(merged[0].radius).toBe(46);
+        expect(merged[0].radius).toBe(40);
     });
 });
 
@@ -312,39 +297,6 @@ describe('kit pinball playability', () => {
         expect(moved).toBeGreaterThan(40);
     });
 
-    it('lets playfield balls pass under the cross-wire overpass', () => {
-        const table = kitTableObjects();
-        const over = table.filter((e) => e.id.startsWith('cross-wire') && e.kind === 'slide');
-        expect(over.every((e) => e.layer === 'overpass')).toBe(true);
-
-        const outer = table.find((e) => e.id === 'cross-wire-outer')!;
-        const inner = table.find((e) => e.id === 'cross-wire-inner')!;
-        const mx = (outer.points![2][0] + inner.points![2][0]) / 2;
-        const wireBottom = Math.max(
-            ...outer.points!.map(([, y]) => y),
-            ...inner.points!.map(([, y]) => y)
-        );
-        const wireTop = Math.min(
-            ...outer.points!.map(([, y]) => y),
-            ...inner.points!.map(([, y]) => y)
-        );
-        const below = wireBottom + 140;
-        const physics = new ProcurementPlanckPhysics(1080, 1920);
-        physics.relaunch(mx, below, 52, 0);
-        let crossedBand = false;
-        let mounted = false;
-        const startY = physics.getBall().y;
-        for (let frame = 0; frame < 120; frame++) {
-            physics.step(1000 / 60);
-            const events = physics.consumeEvents();
-            if (events.some((e) => e.type === 'LANE_ENTER' && e.id === 'cross-wire')) mounted = true;
-            if (physics.getBall().y < (wireTop + wireBottom) / 2) crossedBand = true;
-        }
-        expect(mounted).toBe(false);
-        // Either crossed the wire band or at least traveled upward through it without mounting.
-        expect(crossedBand || physics.getBall().y < startY - 80).toBe(true);
-    });
-
     it('climbs the left ramp without oscillating halfway', () => {
         const table = kitTableObjects();
         const outer = table.find((e) => e.id === 'left-ramp-outer')!;
@@ -387,14 +339,16 @@ describe('kit pinball playability', () => {
             if (physics.consumeEvents().some((e) => e.type === 'LANE_EXIT' && e.id === 'right-ramp')) {
                 exited = true;
             }
-            // After eject, ball should be above the spout and moving in open play.
-            if (exited && b.y < exit.y - 20 && Math.abs(b.x - exit.x) > 40) break;
+            // After eject the ball should be traveling toward the bumper island.
+            if (exited && exit.x - b.x > 120) break;
         }
         expect(exited).toBe(true);
-        expect(minY).toBeLessThan(exit.y);
+        expect(minY).toBeLessThan(exit.y + 40);
         const final = physics.getBall();
-        expect(final.y).toBeLessThan(exit.y + 30);
-        expect(Math.abs(final.x - 540)).toBeLessThan(420);
+        expect(physics.getBallState()).toBe('playing');
+        // Tossed toward center, never over the top rail or off the sides.
+        expect(final.x).toBeLessThan(exit.x - 40);
+        expect(final.y).toBeGreaterThan(120);
     });
 
     it('blocks mid-channel entry into left and right ramps from the playfield', () => {
@@ -421,51 +375,6 @@ describe('kit pinball playability', () => {
         }
     });
 
-    it('places cross-wire mouths inside the side-ramp channels', () => {
-        resetAppropriationsKitCache();
-        const table = kitTableObjects();
-        const wireEnter = table.find((e) => e.id === 'cross-wire-enter')!;
-        const wireExit = table.find((e) => e.id === 'cross-wire-exit')!;
-        const leftOuter = table.find((e) => e.id === 'left-ramp-outer')!;
-        const leftInner = table.find((e) => e.id === 'left-ramp-inner')!;
-        const rightOuter = table.find((e) => e.id === 'right-ramp-outer')!;
-        const rightInner = table.find((e) => e.id === 'right-ramp-inner')!;
-
-        const distToChannel = (
-            x: number,
-            y: number,
-            outer: typeof leftOuter,
-            inner: typeof leftInner
-        ) => {
-            let best = Infinity;
-            const n = Math.min(outer.points!.length, inner.points!.length);
-            for (let i = 0; i < n; i++) {
-                const cx = (outer.points![i][0] + inner.points![i][0]) / 2;
-                const cy = (outer.points![i][1] + inner.points![i][1]) / 2;
-                best = Math.min(best, Math.hypot(x - cx, y - cy));
-            }
-            return best;
-        };
-
-        expect(distToChannel(wireEnter.x, wireEnter.y, leftOuter, leftInner)).toBeLessThan(40);
-        expect(distToChannel(wireExit.x, wireExit.y, rightOuter, rightInner)).toBeLessThan(40);
-    });
-
-    it('arms cross-wire after left-ramp entrance', () => {
-        const table = kitTableObjects();
-        const rampEnter = table.find((e) => e.id === 'left-ramp-enter')!;
-        const physics = new ProcurementPlanckPhysics(1080, 1920);
-        physics.relaunch(rampEnter.x, rampEnter.y, 4, 0);
-        let armed = false;
-        for (let frame = 0; frame < 40; frame++) {
-            physics.step(1000 / 60);
-            if (physics.consumeEvents().some((e) => e.id === 'cross-wire-armed')) armed = true;
-            if (physics.isCrossWireArmed()) armed = true;
-            if (armed) break;
-        }
-        expect(armed || physics.isCrossWireArmed()).toBe(true);
-    });
-
     it('feeds the ball onto flippers with outboard slings and clear inlanes', () => {
         resetAppropriationsKitCache();
         const table = kitTableObjects();
@@ -481,7 +390,7 @@ describe('kit pinball playability', () => {
 
         // Inlane / outboard of sling triangle — roll down onto the flipper.
         const physics = new ProcurementPlanckPhysics(1080, 1920, 'appropriations', table);
-        physics.relaunch(160, leftSling.y - 40, 0, 0);
+        physics.relaunch(170, leftSling.y - 40, 0, 0);
         let nearLeft = false;
         for (let frame = 0; frame < 240; frame++) {
             physics.step(1000 / 60);
@@ -491,7 +400,7 @@ describe('kit pinball playability', () => {
         expect(nearLeft).toBe(true);
 
         const physicsR = new ProcurementPlanckPhysics(1080, 1920, 'appropriations', table);
-        physicsR.relaunch(920, rightSling.y - 40, 0, 0);
+        physicsR.relaunch(890, rightSling.y - 40, 0, 0);
         let nearRight = false;
         for (let frame = 0; frame < 240; frame++) {
             physicsR.step(1000 / 60);

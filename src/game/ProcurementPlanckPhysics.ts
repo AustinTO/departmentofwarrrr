@@ -34,9 +34,6 @@ export class ProcurementPlanckPhysics {
     private tunnelTransit: { linkId: string; framesLeft: number } | null = null;
     /** Deferred tunnel start — never deactivate bodies inside contact callbacks. */
     private pendingTunnel: { ball: planck.Body; linkId: string } | null = null;
-    /** Riding the elevated cross-wire (otherwise those rails are pass-under). */
-    private ballOnOverpass = false;
-    private overpassMountX = 0;
     /** Frames remaining to keep pushing uphill while recovering a ramp climb. */
     private laneClimbLockFrames = 0;
     /** Throttle lane boost so impulses don't chatter every physics tick. */
@@ -45,10 +42,11 @@ export class ProcurementPlanckPhysics {
     private pendingRampAssist = false;
     /** Pop the ball out of a ramp spout after exit contact (never mutate in the callback). */
     private pendingRampEject: { ball: planck.Body; linkId: string } | null = null;
-    /** Frames the cross-wire mouths will accept a mount after a ramp entry. */
-    private crossWireArmedFrames = 0;
+    /** Loft out of the plunger mouth after exit contact (never mutate in the callback). */
+    private pendingShooterExit: planck.Body | null = null;
+    /** Launch power of the current plunge — scales the shooter-mouth sweep. */
+    private lastLaunchPower = 0;
     private readonly tunnelLinks: Map<string, { enter: TableObject; exit: TableObject }>;
-    private readonly overpassBounds: { minY: number; maxY: number; minX: number; maxX: number; midY: number } | null;
     readonly bumpers: readonly ProcurementBumper[];
     readonly table: readonly TableObject[];
 
@@ -71,22 +69,6 @@ export class ProcurementPlanckPhysics {
             if (e.sensor === 'exit' || e.id.includes('-exit')) pair.exit = e;
             this.tunnelLinks.set(e.linkId, pair);
         });
-        const overpassPts = this.table
-            .filter((e) => e.layer === 'overpass' && e.points)
-            .flatMap((e) => e.points!);
-        if (overpassPts.length) {
-            const xs = overpassPts.map(([x]) => x);
-            const ys = overpassPts.map(([, y]) => y);
-            this.overpassBounds = {
-                minX: Math.min(...xs) - 20,
-                maxX: Math.max(...xs) + 20,
-                minY: Math.min(...ys) - 10,
-                maxY: Math.max(...ys) + 10,
-                midY: (Math.min(...ys) + Math.max(...ys)) / 2
-            };
-        } else {
-            this.overpassBounds = null;
-        }
         const width = tableWidth;
         const v = (x: number, y: number) => planck.Vec2(x / ProcurementPlanckPhysics.scale, y / ProcurementPlanckPhysics.scale);
         const scale = ProcurementPlanckPhysics.scale;
@@ -115,15 +97,13 @@ export class ProcurementPlanckPhysics {
         this.table.forEach((entry) => {
             if ((entry.kind !== 'wall' && entry.kind !== 'slide') || !entry.points || entry.points.length < 2) return;
             const isSlide = entry.kind === 'slide';
-            const isOverpass = entry.layer === 'overpass';
             // Slides must be ice-slick — any friction sandwiches the ball between dual rails.
             const restitution = isSlide ? 0.15 : 0.75;
             const friction = isSlide ? 0 : 0.02;
             const halfThick = isSlide ? PINBALL_SIZING.slideHalfThicknessPx : PINBALL_SIZING.railHalfThicknessPx;
-            const base = entry.id === 'shooter-oneway'
+            const prefix = entry.id === 'shooter-oneway'
                 ? `GATE:${entry.id}`
                 : isSlide ? `LANE:${entry.id}` : `WALL:${entry.id}`;
-            const prefix = isOverpass ? `OVERPASS:${base}` : base;
             const pts = entry.points;
             // Caps only on cabinet walls — slide vertex caps were pinching channels shut.
             if (!isSlide) {
@@ -211,7 +191,7 @@ export class ProcurementPlanckPhysics {
             right: this.createFlipper(v, 'right', rightFlip?.x ?? width - 270, rightFlip?.y ?? 1660, -0.42, 0.72)
         };
 
-        // One-way plunger gate + elevated overpass filtering.
+        // One-way plunger gate: ball may leave the tube leftward, never re-enter.
         this.world.on('pre-solve', (contact) => {
             const a = contact.getFixtureA().getBody();
             const b = contact.getFixtureB().getBody();
@@ -219,23 +199,7 @@ export class ProcurementPlanckPhysics {
             const other = ballBody === a ? b : ballBody === b ? a : undefined;
             const tag = String(other?.getUserData() ?? '');
             if (!ballBody || !tag) return;
-            if (tag.startsWith('GATE:')) {
-                if (ballBody.getLinearVelocity().x < 0) contact.setEnabled(false);
-                return;
-            }
-            // Playfield balls pass under elevated wire rails.
-            if (tag.startsWith('OVERPASS:') && !this.ballOnOverpass) {
-                contact.setEnabled(false);
-                return;
-            }
-            // While riding the wire, ignore ground hardware under the span.
-            if (this.ballOnOverpass && (
-                tag.startsWith('BUMPER:')
-                || tag.startsWith('POST:')
-                || tag.startsWith('TARGET:')
-                || tag.startsWith('SLING:')
-                || tag.startsWith('SKILL:')
-            )) {
+            if (tag.startsWith('GATE:') && ballBody.getLinearVelocity().x < 0) {
                 contact.setEnabled(false);
             }
         });
@@ -257,10 +221,6 @@ export class ProcurementPlanckPhysics {
                 const parts = tag.split(':');
                 const role = parts[1];
                 const linkId = parts[2];
-                if (linkId === 'cross-wire') {
-                    this.handleCrossWireSensor(ballBody, role);
-                    return;
-                }
                 if (role === 'entrance' && this.tunnelLinks.has(linkId) && linkId !== 'shooter') {
                     const isTunnel = this.table.some(
                         (e) => e.linkId === linkId && e.id.startsWith('tunnel-')
@@ -273,17 +233,15 @@ export class ProcurementPlanckPhysics {
                     }
                 }
                 if (role === 'entrance') {
-                    // Riding a side ramp briefly arms the cross-wire overpass.
-                    if (linkId === 'left-ramp' || linkId === 'right-ramp') {
-                        this.crossWireArmedFrames = 150;
+                    // Ramp mouth — arm the climb assist only for a ball moving UP
+                    // into the channel (a ball falling out of the mouth must not
+                    // get yo-yo'd back up).
+                    if (
+                        (linkId === 'left-ramp' || linkId === 'right-ramp')
+                        && ballBody.getLinearVelocity().y < -1
+                    ) {
                         this.laneClimbLockFrames = Math.max(this.laneClimbLockFrames, 90);
                         this.pendingRampAssist = true;
-                        // Arm event once per climb — re-entry from climb nudges was flashing the camera.
-                        const armKey = `ARM:${linkId}`;
-                        if ((this.lastKickAt.get(armKey) ?? 0) + 900 < now) {
-                            this.lastKickAt.set(armKey, now);
-                            this.events.push({ type: 'LANE_ENTER', id: 'cross-wire-armed' });
-                        }
                     }
                     const enterKey = `ENTER:${linkId}`;
                     if ((this.lastKickAt.get(enterKey) ?? 0) + 500 < now) {
@@ -291,20 +249,29 @@ export class ProcurementPlanckPhysics {
                         this.events.push({ type: 'LANE_ENTER', id: linkId });
                     }
                 } else if (role === 'exit') {
+                    // Plunger mouth — defer loft until after world.step (contact mutates are ignored).
+                    if (linkId === 'shooter' && !this.pendingShooterExit) {
+                        const vel = ballBody.getLinearVelocity();
+                        if (vel.y < -2) this.pendingShooterExit = ballBody;
+                    }
                     // Right ramp is bidirectional — dropping into the top mouth counts as entry.
                     if (linkId === 'right-ramp' && ballBody.getLinearVelocity().y > 1.2) {
-                        this.crossWireArmedFrames = Math.max(this.crossWireArmedFrames, 150);
                         const enterKey = `ENTER:${linkId}:top`;
                         if ((this.lastKickAt.get(enterKey) ?? 0) + 500 < now) {
                             this.lastKickAt.set(enterKey, now);
                             this.events.push({ type: 'LANE_ENTER', id: linkId });
-                            this.events.push({ type: 'LANE_ENTER', id: 'cross-wire-armed' });
                         }
                         return;
                     }
                     // Finished a climb up the right ramp — pop out the top spout onto the board.
-                    if (linkId === 'right-ramp' && !this.pendingRampEject) {
+                    if (
+                        linkId === 'right-ramp'
+                        && !this.pendingRampEject
+                        && (this.laneClimbLockFrames > 0 || ballBody.getLinearVelocity().y < -2)
+                    ) {
                         this.pendingRampEject = { ball: ballBody, linkId };
+                        // LANE_EXIT is emitted by ejectRampSpout once the pop actually happens.
+                        return;
                     }
                     const exitKey = `EXIT:${linkId}`;
                     if ((this.lastKickAt.get(exitKey) ?? 0) + 500 < now) {
@@ -314,8 +281,6 @@ export class ProcurementPlanckPhysics {
                 } else this.events.push({ type: 'LANE_HIT', id: linkId });
                 return;
             }
-
-            if (tag.startsWith('OVERPASS:')) return;
 
             const impulse = ballBody.getPosition().clone().sub(other!.getPosition());
             if (!impulse.lengthSquared()) return;
@@ -354,83 +319,6 @@ export class ProcurementPlanckPhysics {
             }
             // WALL:* contacts are silent structural rails — no event spam.
         });
-    }
-
-    /** Mount/dismount the elevated cross-wire at either mouth. */
-    private handleCrossWireSensor(ball: planck.Body, role: string) {
-        if (!this.ballOnOverpass) {
-            // Occasional ride: only while armed from a recent ramp entry.
-            if (this.crossWireArmedFrames <= 0) {
-                this.events.push({ type: 'LANE_HIT', id: 'cross-wire-cold' });
-                return;
-            }
-            const vel = ball.getLinearVelocity();
-            const up = -vel.y;
-            const lateral = Math.abs(vel.x);
-            // Steep committed climb continues up the ramp; a graze / slower / sideways
-            // pass at the in-ramp mouth catches the wire (the intended "chance").
-            const steepClimb = up > 9 && lateral < up * 0.4;
-            if (steepClimb) {
-                this.events.push({ type: 'LANE_HIT', id: 'cross-wire-bypass' });
-                return;
-            }
-            this.crossWireArmedFrames = 0;
-            this.mountOverpass(ball, role === 'exit' ? -1 : 1);
-            this.events.push({ type: 'LANE_ENTER', id: 'cross-wire' });
-            return;
-        }
-        // Already riding — dismount when we reach a mouth after traveling.
-        const px = ball.getPosition().x * ProcurementPlanckPhysics.scale;
-        if (Math.abs(px - this.overpassMountX) > 280) {
-            this.dismountOverpass(ball);
-            this.events.push({ type: 'LANE_EXIT', id: 'cross-wire' });
-        }
-    }
-
-    private mountOverpass(ball: planck.Body, dir: number) {
-        if (!this.overpassBounds) return;
-        const scale = ProcurementPlanckPhysics.scale;
-        const p = ball.getPosition();
-        const px = p.x * scale;
-        this.ballOnOverpass = true;
-        this.overpassMountX = px;
-        ball.setTransform(planck.Vec2(px / scale, this.overpassBounds.midY / scale), 0);
-        const speed = Math.max(10, Math.abs(ball.getLinearVelocity().x) + 6);
-        ball.setLinearVelocity(planck.Vec2(dir * speed, 0));
-        ball.setAwake(true);
-    }
-
-    private dismountOverpass(ball: planck.Body) {
-        this.ballOnOverpass = false;
-        const vel = ball.getLinearVelocity();
-        // Drop back onto the playfield with a mild downward dump.
-        ball.setLinearVelocity(planck.Vec2(vel.x * 0.7, Math.max(6, vel.y + 4)));
-    }
-
-    private tickOverpass() {
-        if (!this.ballOnOverpass || !this.overpassBounds) return;
-        const ball = this.balls.find((b) => b.isActive());
-        if (!ball) {
-            this.ballOnOverpass = false;
-            return;
-        }
-        const p = ball.getPosition();
-        const px = p.x * ProcurementPlanckPhysics.scale;
-        const py = p.y * ProcurementPlanckPhysics.scale;
-        const b = this.overpassBounds;
-        if (py < b.minY - 40 || py > b.maxY + 40 || px < b.minX - 40 || px > b.maxX + 40) {
-            this.dismountOverpass(ball);
-            this.events.push({ type: 'LANE_EXIT', id: 'cross-wire' });
-            return;
-        }
-        // Keep the ride horizontal and in-channel.
-        const vel = ball.getLinearVelocity();
-        if (Math.abs(vel.x) < 6) {
-            const dir = px >= this.overpassMountX ? 1 : -1;
-            ball.setLinearVelocity(planck.Vec2(dir * 9, vel.y * 0.2));
-        } else if (Math.abs(vel.y) > 4) {
-            ball.setLinearVelocity(planck.Vec2(vel.x, vel.y * 0.35));
-        }
     }
 
     private createBallBody(x: number, y: number, active: boolean) {
@@ -476,7 +364,6 @@ export class ProcurementPlanckPhysics {
                 this.beginTunnel(pending.ball, pending.linkId);
             }
             this.tickTunnel();
-            this.tickOverpass();
             if (this.pendingRampAssist) {
                 this.pendingRampAssist = false;
                 const ball = this.balls.find((b) => b.isActive());
@@ -495,7 +382,11 @@ export class ProcurementPlanckPhysics {
                 this.pendingRampEject = null;
                 this.ejectRampSpout(pending.ball, pending.linkId);
             }
-            if (this.crossWireArmedFrames > 0) this.crossWireArmedFrames -= 1;
+            if (this.pendingShooterExit) {
+                const ball = this.pendingShooterExit;
+                this.pendingShooterExit = null;
+                this.ejectShooterMouth(ball);
+            }
             this.accumulator -= 1 / 60;
         }
         if (this.ballState !== 'playing') return;
@@ -554,9 +445,10 @@ export class ProcurementPlanckPhysics {
         if (!ball || !pair?.exit) return;
         const scale = ProcurementPlanckPhysics.scale;
         ball.setTransform(planck.Vec2(pair.exit.x / scale, pair.exit.y / scale), 0);
-        // Kick toward the nearer flipper so the dump isn't a free drain through the tip gap.
-        const towardLeft = pair.exit.x <= this.tableWidth / 2;
-        ball.setLinearVelocity(planck.Vec2(towardLeft ? -5.5 : 5.5, 10));
+        // Gentle toward-center drift — the exit is placed to drop onto a flipper,
+        // never through the tip gap.
+        const towardCenter = pair.exit.x <= this.tableWidth / 2 ? 1 : -1;
+        ball.setLinearVelocity(planck.Vec2(towardCenter * 1.5, 6));
         ball.setActive(true);
         ball.setAwake(true);
         this.events.push({ type: 'TUNNEL_EXIT', id: linkId });
@@ -564,10 +456,6 @@ export class ProcurementPlanckPhysics {
 
     isInTunnel() {
         return Boolean(this.tunnelTransit);
-    }
-
-    isCrossWireArmed() {
-        return this.crossWireArmedFrames > 0 && !this.ballOnOverpass;
     }
 
     /** True when the only ball is idling back inside the plunger channel. */
@@ -634,51 +522,75 @@ export class ProcurementPlanckPhysics {
             return false;
         }
 
-        const towardCenter = px < 540 ? 3.4 : -3.4;
-        ball.setLinearVelocity(planck.Vec2(towardCenter * 0.4, Math.max(8, vel.y + 6)));
-        ball.applyLinearImpulse(planck.Vec2(towardCenter, 8), ball.getWorldCenter(), true);
+        // Shove sideways toward center — a downward push just wedges the ball
+        // deeper into whatever pocket caught it.
+        const towardCenter = px < 540 ? 1 : -1;
+        ball.setLinearVelocity(planck.Vec2(towardCenter * 5, Math.min(vel.y, 2)));
         ball.setAwake(true);
         return false;
     }
 
     /**
-     * Blast the ball out of a ramp exit spout onto the upper playfield.
-     * Clears climb-assist so we don't immediately suck it back into the channel.
+     * Fly off the ramp's open spout end toward the bumper island — like a real
+     * ramp shot launching into the upper playfield. Clears climb-assist so we
+     * don't suck it back into the channel.
      */
     private ejectRampSpout(ball: planck.Body, linkId: string) {
         const exit = this.table.find((e) => e.id === `${linkId}-exit`);
         if (!exit) return;
         const scale = ProcurementPlanckPhysics.scale;
         const towardCenter = exit.x >= this.tableWidth / 2 ? -1 : 1;
-        // Place just past the mouth into open air at the top of the board.
+        // Just off the spout lip, slight up-and-over toward center.
         const outX = exit.x + towardCenter * 70;
-        const outY = Math.max(320, exit.y - 70);
+        const outY = exit.y + 10;
         ball.setTransform(planck.Vec2(outX / scale, outY / scale), 0);
-        ball.setLinearVelocity(planck.Vec2(towardCenter * 11, -16));
+        ball.setLinearVelocity(planck.Vec2(towardCenter * 8, -3));
         ball.setAwake(true);
         this.laneClimbLockFrames = 0;
         this.laneBoostCooldown = 45;
         this.pendingRampAssist = false;
+        this.events.push({ type: 'LANE_EXIT', id: linkId });
+    }
+
+    /**
+     * Sweep the ball left across the top of the board after a plunge, like a
+     * real top arch. Sweep speed scales with launch power: soft plunges drop
+     * into the upper island / right-ramp spout, hard plunges reach the left
+     * wall and come down the left side. Always below the sealed top rail.
+     */
+    private ejectShooterMouth(ball: planck.Body) {
+        if (!ball.isActive()) return;
+        const scale = ProcurementPlanckPhysics.scale;
+        const sweep = Math.min(11, 3.2 + this.lastLaunchPower * 0.12);
+        ball.setTransform(planck.Vec2(860 / scale, (PLAYFIELD_LAYOUT.originY + 150) / scale), 0);
+        ball.setLinearVelocity(planck.Vec2(-sweep, -1.5));
+        ball.setAwake(true);
+        // A plunger loft is not a ramp climb — never arm ramp assists here.
+        this.laneClimbLockFrames = 0;
+        this.pendingRampAssist = false;
+        this.events.push({ type: 'LANE_EXIT', id: 'shooter' });
     }
 
     /** If the ball stalls near a free ramp spout (right ramp), pop it onto the board. */
     private tryEjectNearRampExit() {
         if (this.pendingRampEject) return;
+        // Climb-lock is only armed by ramp entrance — never by a plunger loft.
+        if (this.laneClimbLockFrames <= 0) return;
         const ball = this.balls.find((b) => b.isActive());
         if (!ball || this.ballState !== 'playing') return;
+        const vel = ball.getLinearVelocity();
+        // Still climbing out the spout — don't grab balls falling across the upper board.
+        if (vel.y > -0.8) return;
         const exit = this.table.find((e) => e.id === 'right-ramp-exit');
         if (!exit) return;
         const p = ball.getPosition();
         const px = p.x * ProcurementPlanckPhysics.scale;
         const py = p.y * ProcurementPlanckPhysics.scale;
+        if (Math.abs(px - exit.x) > 42) return;
         const dist = Math.hypot(px - exit.x, py - exit.y);
-        const vel = ball.getLinearVelocity();
-        // Near the spout and either climbing or already climb-locked from the mouth.
-        if (dist > 95) return;
-        if (py > exit.y + 110) return;
-        if (vel.y > 4 && this.laneClimbLockFrames <= 0) return;
+        if (dist > 55) return;
+        if (py > exit.y + 40) return;
         this.ejectRampSpout(ball, 'right-ramp');
-        this.events.push({ type: 'LANE_EXIT', id: 'right-ramp' });
     }
 
     /**
@@ -693,7 +605,7 @@ export class ProcurementPlanckPhysics {
     ): boolean {
         const pairs = new Map<string, { outer?: TableObject; inner?: TableObject }>();
         for (const entry of this.table) {
-            if (entry.kind !== 'slide' || !entry.points || entry.layer === 'overpass') continue;
+            if (entry.kind !== 'slide' || !entry.points) continue;
             const link = entry.linkId ?? entry.id;
             if (!link.includes('ramp')) continue;
             if (!entry.id.endsWith('-outer') && !entry.id.endsWith('-inner')) continue;
@@ -783,22 +695,17 @@ export class ProcurementPlanckPhysics {
         const px = p.x * ProcurementPlanckPhysics.scale;
         const py = p.y * ProcurementPlanckPhysics.scale;
 
-        if (vel.y < -1.0) this.laneClimbLockFrames = Math.max(this.laneClimbLockFrames, 45);
-        else if (this.laneClimbLockFrames > 0) this.laneClimbLockFrames -= 1;
+        // Climb-lock comes only from ramp entrance / assist — never from "going up"
+        // alone (that was stealing plunger shots near the right-ramp spout).
+        if (this.laneClimbLockFrames > 0) this.laneClimbLockFrames -= 1;
 
         // Riding down a ramp (e.g. right-ramp top entry) — don't force uphill.
         if (vel.y > 2 && this.laneClimbLockFrames <= 0) return;
 
-        // Sideways scrape at full speed is still stuck — don't treat |v| alone as healthy climb.
-        const climbingWell = vel.y < -5;
-        if (climbingWell && this.laneClimbLockFrames <= 0) return;
+        // Only assist balls that actually entered a ramp mouth.
+        if (this.laneClimbLockFrames <= 0) return;
 
-        const helped = this.nudgeBallAlongNearestRamp(
-            ball,
-            px,
-            py,
-            this.laneClimbLockFrames > 0 || vel.length() < 3.5 || vel.y > -2
-        );
+        const helped = this.nudgeBallAlongNearestRamp(ball, px, py, true);
         if (helped) this.laneBoostCooldown = 8;
     }
 
@@ -823,10 +730,9 @@ export class ProcurementPlanckPhysics {
         this.laneBoostCooldown = 0;
         this.pendingRampAssist = false;
         this.pendingRampEject = null;
+        this.pendingShooterExit = null;
         this.tunnelTransit = null;
         this.pendingTunnel = null;
-        this.ballOnOverpass = false;
-        this.crossWireArmedFrames = 0;
     }
 
     private updateFlipperMotors() {
@@ -894,9 +800,9 @@ export class ProcurementPlanckPhysics {
             if (index === 0) {
                 ball.setActive(true);
                 ball.setTransform(planck.Vec2(x / ProcurementPlanckPhysics.scale, y / ProcurementPlanckPhysics.scale), 0);
-                // Keep shots nearly vertical. Aim above ~0.06 scrapes the shooter
-                // divider and never clears; the exit hood is what feeds left into play.
-                const aimClamped = Math.max(0, Math.min(0.06, aim));
+                // Slight left loft through the open mouth / one-way gate.
+                // Cap aim so hard pulls don't grind the divider.
+                const aimClamped = Math.max(0, Math.min(0.08, aim));
                 const horizontalSpeed = aimClamped * 4.2;
                 ball.setLinearVelocity(planck.Vec2(-horizontalSpeed, -power * 1.2));
                 ball.setAngularVelocity(0);
@@ -912,12 +818,12 @@ export class ProcurementPlanckPhysics {
         this.idleStuckFrames = 0;
         this.tunnelTransit = null;
         this.pendingTunnel = null;
-        this.ballOnOverpass = false;
-        this.crossWireArmedFrames = 0;
         this.laneClimbLockFrames = 0;
         this.laneBoostCooldown = 0;
         this.pendingRampAssist = false;
         this.pendingRampEject = null;
+        this.pendingShooterExit = null;
+        this.lastLaunchPower = power;
         this.events = [];
         return true;
     }

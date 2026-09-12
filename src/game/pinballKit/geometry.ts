@@ -8,7 +8,7 @@ export const KIT_ART_HEIGHT = 1600;
 export const KIT_MID_X = 540;
 export const BALL_RADIUS = 28;
 /** Recommended mouth / entrance channel width. */
-export const MIN_CHANNEL_GAP = 112;
+export const MIN_CHANNEL_GAP = 100;
 /** Narrowest rideable mid-channel (ball diameter + margin). */
 export const MIN_RIDE_GAP = BALL_RADIUS * 2 + 16;
 export const SKILL_MOUTH_RADIUS = 22;

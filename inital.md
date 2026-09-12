@@ -1,3 +1,5 @@
+> **Procurement direction update — 2026-09-11:** This branch fully transitions procurement pinball to TypeScript + Three.js + Rapier 3D. Follow [the implementation plan](PINBALL_3D_IMPLEMENTATION_PLAN.md), [architecture](PINBALL_3D_ARCHITECTURE.md), and [evaluation gates](PINBALL_3D_EVALUATION.md). The Phaser/Planck implementation remains on `main` as comparison and rollback reference; it is not a selectable mode here. This supersedes procurement engine requirements below; the rest of this original brief remains historical product context.
+
 You are the lead implementation team for a satirical 2D arcade/strategy game called **Department of WARRR**.
 
 Your job is to begin building the game immediately, starting with a playable graybox prototype and progressing through strict gameplay validation gates before adding polish.
@@ -47,7 +49,7 @@ Use:
 * **Phaser 4.x**
 * **Vite**
 * **Phaser Arcade Physics** for combat
-* **Phaser Matter Physics** for procurement pinball
+* **Three.js + Rapier 3D** for procurement pinball on this branch; Planck remains on `main` as the comparison reference
 * **Vitest** for simulation/unit tests
 * **Playwright** for basic game-flow browser testing
 * **Zod** for validating data-driven game content

@@ -5,7 +5,9 @@ import { drain, type KitEmit, wall } from '../types';
 export function cabinet(): KitEmit {
     return {
         objects: [
-            wall('top-rail', artPts([70, 50], [948, 55])),
+            // Full-width sealed top rail — nothing ever leaves over the top,
+            // including ramp spout pops and hard plunger lofts.
+            wall('top-rail', artPts([70, 50], [1052, 50])),
             wall('left-rail', artPts([70, 50], [70, 1520])),
             wall('right-rail', artPts([1052, 50], [1052, 1520])),
             // Narrower drain gap to match close flippers
