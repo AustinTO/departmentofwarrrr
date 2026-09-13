@@ -343,6 +343,15 @@ export class TableView {
       roughness: 0.68,
       metalness: 0.08,
     });
+    new THREE.TextureLoader().load(
+      "/assets/pinball/procurement-corruption-playfield.png",
+      (paintedSkin) => {
+        paintedSkin.colorSpace = THREE.SRGBColorSpace;
+        paintedSkin.anisotropy = 4;
+        fieldMaterial.map = paintedSkin;
+        fieldMaterial.needsUpdate = true;
+      },
+    );
     const field = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 1.2), fieldMaterial);
     field.rotation.x = -Math.PI / 2;
     field.position.y = 0.0007;
