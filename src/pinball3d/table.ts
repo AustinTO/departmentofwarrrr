@@ -66,14 +66,6 @@ export const BONUS_TARGETS = [
     color: "#ff7662",
   },
   {
-    id: "classified",
-    x: -0.095,
-    z: -0.341,
-    label: "CLASSIFIED",
-    sub: "+ $4B",
-    color: "#d5b0ff",
-  },
-  {
     id: "black-budget",
     x: -0.093,
     z: 0.215,
@@ -221,7 +213,7 @@ export function makeTable(): Part[] {
       id: b.id,
       kind: "cylinder",
       position: [b.x, 0.03, b.z],
-      radius: 0.037,
+      radius: 0.032,
       height: 0.06,
       role: "bumper",
       color: b.color,
@@ -243,7 +235,7 @@ export function makeTable(): Part[] {
       box(
         target.id,
         [target.x, 0.026, target.z],
-        [0.045, 0.052, 0.018],
+        [0.038, 0.040, 0.014],
         "target",
         target.color,
       );

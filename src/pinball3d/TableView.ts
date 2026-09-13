@@ -370,8 +370,21 @@ export class TableView {
       const stack = new THREE.Group();
       stack.position.set(x, 0.006, z);
       stack.rotation.y = rotation;
+      const cashTexture = paintTexture(256, 128, (ctx) => {
+        ctx.fillStyle = "#8fb878";
+        ctx.fillRect(0, 0, 256, 128);
+        ctx.strokeStyle = "#dce59b";
+        ctx.lineWidth = 5;
+        ctx.strokeRect(8, 8, 240, 112);
+        ctx.fillStyle = "#44724f";
+        ctx.font = "bold 74px Georgia";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("$", 128, 65);
+      });
       const paper = new THREE.MeshStandardMaterial({
-        color: "#91b66e",
+        map: cashTexture,
+        color: "#ffffff",
         roughness: 0.82,
         metalness: 0.02,
       });
@@ -382,13 +395,13 @@ export class TableView {
       });
       for (let layer = 0; layer < 4; layer++) {
         const bill = new THREE.Mesh(
-          new THREE.BoxGeometry(0.066, 0.012, 0.036),
+          new THREE.BoxGeometry(0.072, 0.012, 0.043),
           paper,
         );
         bill.position.y = layer * 0.012;
         stack.add(bill);
         const band = new THREE.Mesh(
-          new THREE.BoxGeometry(0.010, 0.014, 0.039),
+          new THREE.BoxGeometry(0.010, 0.014, 0.046),
           edge,
         );
         band.position.set(0.012, layer * 0.012, 0);
@@ -400,6 +413,12 @@ export class TableView {
       );
       seal.position.set(-0.017, 0.052, 0);
       stack.add(seal);
+      const folder = new THREE.Mesh(
+        new THREE.BoxGeometry(0.082, 0.004, 0.052),
+        this.material("#d8b868"),
+      );
+      folder.position.y = 0.056;
+      stack.add(folder);
       this.table.add(stack);
     };
     for (const sign of [-1, 1]) {
@@ -466,20 +485,20 @@ export class TableView {
       this.table.add(assembly);
       this.bumperAssemblies.set(b.id, assembly);
       const base = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.053, 0.047, 0.012, 32),
+        new THREE.CylinderGeometry(0.046, 0.041, 0.010, 32),
         this.material("#1c2a32"),
       );
       base.position.y = 0.006;
       assembly.add(base);
       const chromeRing = new THREE.Mesh(
-        new THREE.TorusGeometry(0.047, 0.0035, 8, 32),
+        new THREE.TorusGeometry(0.040, 0.003, 8, 32),
         this.material("#d8e0d3"),
       );
       chromeRing.rotation.x = Math.PI / 2;
       chromeRing.position.y = 0.014;
       assembly.add(chromeRing);
       const rubber = new THREE.Mesh(
-        new THREE.TorusGeometry(0.041, 0.007, 10, 32),
+        new THREE.TorusGeometry(0.035, 0.006, 10, 32),
         this.material("#182127"),
       );
       rubber.rotation.x = Math.PI / 2;
@@ -498,7 +517,7 @@ export class TableView {
       this.table.add(pointLight);
       this.bumperLights.set(b.id, pointLight);
       const cap = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.032, 0.036, 0.015, 32),
+        new THREE.CylinderGeometry(0.028, 0.031, 0.013, 32),
         lamp,
       );
       cap.position.y = 0.032;
@@ -522,7 +541,7 @@ export class TableView {
       const label = new THREE.Sprite(
         new THREE.SpriteMaterial({ map: labelTexture, depthTest: false }),
       );
-      label.scale.set(0.070, 0.041, 1);
+      label.scale.set(0.060, 0.035, 1);
       label.position.y = 0.053;
       label.renderOrder = 3;
       assembly.add(label);
@@ -733,8 +752,8 @@ export class TableView {
     }
     addCashStack(-0.235, 0.335, -0.22);
     addCashStack(0.225, 0.315, 0.28);
-    this.text("WAR CHEST", -0.235, 0.006, 0.382, 0.095, "#e7cf7f", 0.014);
-    this.text("CONTRACTOR CASH", 0.225, 0.006, 0.362, 0.115, "#e7cf7f", 0.012);
+    this.text("WAR CHEST", -0.235, 0.064, 0.335, 0.065, "#244a37", 0.018);
+    this.text("WAR CHEST", 0.225, 0.064, 0.315, 0.065, "#244a37", 0.018);
     // Small runway-style lamps make the rails and the elevated route legible.
     for (const side of [-1, 1]) {
       for (let i = 0; i < 5; i++) {
