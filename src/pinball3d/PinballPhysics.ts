@@ -84,6 +84,7 @@ export class PinballPhysics {
         desc.setRotation(
           new Quaternion().setFromEuler(new Euler(...part.rotation)),
         );
+      if (part.role === "sensor") desc.setSensor(true);
       desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
       const col = this.world.createCollider(desc, structure);
       this.colliderIds.set(col.handle, part);
@@ -217,7 +218,7 @@ export class PinballPhysics {
     this.queue.drainCollisionEvents((a, b, started) => {
       if (!started || this.state !== "playing") return;
       const part = this.colliderIds.get(a) ?? this.colliderIds.get(b);
-      if (!part || !["bumper", "target", "sling"].includes(part.role)) return;
+      if (!part || !["bumper", "target", "sensor", "sling"].includes(part.role)) return;
       if ((this.cooldown.get(part.id) ?? -1) > this.time) return;
       this.cooldown.set(part.id, this.time + 0.16);
       this.events.push({ type: "hit", id: part.id });

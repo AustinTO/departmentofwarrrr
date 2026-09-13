@@ -25,6 +25,10 @@ export class Procurement3DGame {
   private plungerDrag?: { id: number; startY: number; travel: number };
   private readonly keys = new Set<string>();
   private targets = new Set<string>();
+  private qualifiedContracts = 0;
+  private printerHits = 0;
+  private warChests = new Set<string>();
+  private dropBank = new Set<string>();
   private disposed = false;
   private paused = false;
   private authorized = false;
@@ -359,6 +363,32 @@ export class Procurement3DGame {
         let value = 2e9,
           label = "COST OVERRUN",
           delay = 0.12;
+        if (["cost-overrun", "scope-creep", "emergency-funding"].includes(e.id)) {
+          this.qualifiedContracts = Math.min(3, this.qualifiedContracts + 1);
+          value = 1e9 * this.qualifiedContracts;
+          label = `CONTRACT QUALIFIED ${this.qualifiedContracts}/3`;
+        }
+        if (e.id === "contract-award") {
+          value = this.qualifiedContracts > 0 ? this.qualifiedContracts * 6e9 : 1e9;
+          delay = this.qualifiedContracts * 0.25;
+          label = this.qualifiedContracts > 0 ? "CONTRACT AWARD COLLECTED" : "EMPTY AWARD CEREMONY";
+          this.qualifiedContracts = 0;
+        }
+        if (e.id === "budget-printer") {
+          this.printerHits++;
+          value = 2e9 * this.printerHits;
+          label = this.printerHits >= 5 ? "UNLIMITED FUNDING LIT" : `BUDGET PRINTER ${this.printerHits}/5`;
+        }
+        if (e.id === "war-chest-left" || e.id === "war-chest-right") {
+          this.warChests.add(e.id);
+          value = 3e9;
+          label = this.warChests.size === 2 ? "WAR CHESTS FILLED — MULTIBALL QUALIFIED" : "WAR CHEST FILLED";
+        }
+        if (["drop-bid", "drop-review", "drop-approve"].includes(e.id)) {
+          this.dropBank.add(e.id);
+          value = 1e9;
+          label = this.dropBank.size === 3 ? "NO-BID CONTRACT RAMP LIT" : "PROCUREMENT BANK HIT";
+        }
         if (e.id === "sole-source") {
           value = 3e9;
           label = "SOLE-SOURCE AWARD";
@@ -395,15 +425,14 @@ export class Procurement3DGame {
               : "COMMITTEE VOTE SECURED";
           this.view!.setTargets(this.targets);
         }
-      if (e.type === "ramp") {
-        this.view!.cameraAction();
-          value = this.targets.size === 3 ? 25e9 : 8e9;
+        if (e.type === "ramp") {
+          this.view!.cameraAction();
+          value = this.dropBank.size === 3 ? 25e9 : this.targets.size === 3 ? 18e9 : 8e9;
           delay = 0.4;
           label =
-            this.targets.size === 3
-              ? "SUPPLEMENTAL JACKPOT"
-              : "ELEVATED FUNDING APPROVED";
+            this.dropBank.size === 3 ? "NO-BID CONTRACT JACKPOT" : this.targets.size === 3 ? "SUPPLEMENTAL JACKPOT" : "ELEVATED FUNDING APPROVED";
           this.targets.clear();
+          this.dropBank.clear();
           this.view!.setTargets(this.targets);
         }
         const result = this.contract.applyBumper({
@@ -441,9 +470,13 @@ export class Procurement3DGame {
     ).join(" ");
     this.readout("combo").textContent = `×${this.contract.comboMultiplier()}`;
     this.readout("objective").textContent =
-      this.targets.size === 3
-        ? "RAMP LIT • $25B JACKPOT"
-        : `COMMITTEE VOTES ${this.targets.size} / ${COMMITTEE_TARGET_IDS.length}`;
+      this.warChests.size === 2
+        ? "WAR CHEST MULTIBALL QUALIFIED"
+        : this.dropBank.size === 3
+          ? "NO-BID CONTRACT RAMP LIT"
+          : this.qualifiedContracts > 0
+            ? `SHOOT AWARD • ${this.qualifiedContracts} CONTRACTS READY`
+            : `QUALIFY CONTRACTS ${this.qualifiedContracts}/3`;
     for (const c of ["left", "right"] as Side[])
       this.root.classList.toggle(`${c}-held`, this.held(c));
     const hint = this.root.querySelector<HTMLElement>(".plunger-hint")!;

@@ -20,41 +20,42 @@ export interface Part {
   indices?: number[];
   rotation?: Point;
   color: string;
-  role: "deck" | "rail" | "bumper" | "target" | "sling" | "ramp";
+  role: "deck" | "rail" | "bumper" | "target" | "sensor" | "sling" | "ramp";
 }
 export const BUMPERS = [
   {
     id: "cost-overrun",
-    x: -0.065,
-    z: -0.22,
+    x: -0.072,
+    z: -0.255,
     label: "COST",
     sub: "OVERRUN",
     color: "#ffbb52",
   },
   {
-    id: "sole-source",
-    x: 0.1,
-    z: -0.28,
-    label: "SOLE",
-    sub: "SOURCE",
-    color: "#50e4ce",
-  },
-  {
     id: "scope-creep",
-    x: 0.045,
-    z: -0.075,
+    x: 0,
+    z: -0.305,
     label: "SCOPE",
     sub: "CREEP",
     color: "#ff725d",
   },
   {
     id: "emergency-funding",
-    x: -0.084,
-    z: -0.063,
+    x: 0.072,
+    z: -0.255,
     label: "URGENT",
     sub: "NEED",
     color: "#ca9aff",
   },
+];
+export const FEATURE_TARGETS = [
+  { id: "contract-award", x: 0, z: -0.500, label: "AWARD", color: "#e6c55d", kind: "scoop" },
+  { id: "budget-printer", x: 0, z: -0.105, label: "PRINT", color: "#e85845", kind: "printer" },
+  { id: "war-chest-left", x: -0.235, z: 0.360, label: "CHEST", color: "#d6b452", kind: "chest" },
+  { id: "war-chest-right", x: 0.160, z: 0.330, label: "CHEST", color: "#d6b452", kind: "chest" },
+  { id: "drop-bid", x: -0.052, z: 0.165, label: "BID", color: "#64d8ca", kind: "drop" },
+  { id: "drop-review", x: 0, z: 0.165, label: "REVIEW", color: "#64d8ca", kind: "drop" },
+  { id: "drop-approve", x: 0.052, z: 0.165, label: "APPROVE", color: "#64d8ca", kind: "drop" },
 ];
 export const BONUS_TARGETS = [
   {
@@ -218,6 +219,23 @@ export function makeTable(): Part[] {
       role: "bumper",
       color: b.color,
     });
+  for (const feature of FEATURE_TARGETS) {
+    if (feature.kind === "scoop" || feature.kind === "printer") {
+      parts.push({
+        id: feature.id,
+        kind: "cylinder",
+        position: [feature.x, 0.026, feature.z],
+        radius: feature.kind === "printer" ? 0.030 : 0.036,
+        height: feature.kind === "printer" ? 0.052 : 0.034,
+        role: "target",
+        color: feature.color,
+      });
+    } else if (feature.kind === "chest") {
+      box(feature.id, [feature.x, 0.030, feature.z], [0.062, 0.050, 0.035], "target", feature.color);
+    } else {
+      box(feature.id, [feature.x, 0.026, feature.z], [0.026, 0.042, 0.012], "target", feature.color);
+    }
+  }
   for (const target of BONUS_TARGETS) {
     if (target.id === "black-budget") {
       parts.push({
@@ -230,7 +248,7 @@ export function makeTable(): Part[] {
         color: "#222c36",
       });
     } else if (target.id === "ramp-review") {
-      box(target.id, [target.x, 0.145, target.z], [0.065, 0.045, 0.012], "target", target.color);
+      box(target.id, [target.x, 0.145, target.z], [0.065, 0.045, 0.020], "sensor", target.color);
     } else {
       box(
         target.id,

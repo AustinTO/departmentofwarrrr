@@ -7,6 +7,7 @@ import {
   BUMPERS,
   BONUS_TARGETS,
   COMMITTEE_TARGET_IDS,
+  FEATURE_TARGETS,
   RAMP_SAMPLES,
   FLIPPERS,
   flipperVertices,
@@ -340,6 +341,7 @@ export class TableView {
     });
     const fieldMaterial = new THREE.MeshStandardMaterial({
       map: texture,
+      color: "#687a69",
       roughness: 0.68,
       metalness: 0.08,
     });
@@ -555,6 +557,46 @@ export class TableView {
         bolt.position.set(Math.cos(a) * 0.045, 0.021, Math.sin(a) * 0.045);
         assembly.add(bolt);
       }
+    }
+    for (const feature of FEATURE_TARGETS) {
+      const group = new THREE.Group();
+      group.position.set(feature.x, 0, feature.z);
+      const light = new THREE.PointLight(feature.color, 0.25, 0.18, 2);
+      light.position.y = 0.08;
+      group.add(light);
+      if (feature.kind === "scoop") {
+        const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.040, 0.006, 8, 32), this.material("#e5d8a4"));
+        bezel.rotation.x = Math.PI / 2; bezel.position.y = 0.024; group.add(bezel);
+        const well = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.034, 0.018, 32), this.material("#0b1519"));
+        well.position.y = 0.018; group.add(well);
+      } else if (feature.kind === "printer") {
+        const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.040, 0.050, 24), this.material("#303d43"));
+        housing.position.y = 0.028; group.add(housing);
+        const paper = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.003, 0.026), this.material("#e6dfbe"));
+        paper.position.set(0, 0.058, -0.008); group.add(paper);
+      } else if (feature.kind === "chest") {
+        const chest = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.044, 0.040), this.material("#5d421f"));
+        chest.position.y = 0.026; group.add(chest);
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.070, 0.010, 0.042), this.material("#d4ae50"));
+        lid.position.y = 0.050; group.add(lid);
+        const lock = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.004), this.material("#f4d979"));
+        lock.position.set(0, 0.030, 0.022); group.add(lock);
+      } else {
+        const drop = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.045, 0.014), this.material(feature.color));
+        drop.position.y = 0.026; group.add(drop);
+      }
+      const insertTexture = paintTexture(160, 160, (ctx) => {
+        ctx.clearRect(0, 0, 160, 160); ctx.fillStyle = feature.color;
+        ctx.beginPath(); ctx.arc(80, 80, 70, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#f3e5b0"; ctx.lineWidth = 7; ctx.stroke();
+        ctx.fillStyle = "#1d3030"; ctx.font = feature.kind === "drop" ? "bold 27px Arial" : "bold 31px Arial";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(feature.label, 80, 80, 130);
+      });
+      const insert = new THREE.Sprite(new THREE.SpriteMaterial({ map: insertTexture, depthTest: false }));
+      insert.scale.set(feature.kind === "drop" ? 0.034 : 0.055, feature.kind === "drop" ? 0.034 : 0.055, 1);
+      insert.position.y = feature.kind === "scoop" ? 0.040 : feature.kind === "printer" ? 0.070 : 0.064;
+      insert.renderOrder = 3; group.add(insert);
+      this.table.add(group);
     }
     this.text("SUPPLEMENTAL", -0.18, 0.012, 0.115, 0.12, "#65ead2", 0.018);
     this.text("FUNDING RAMP", -0.18, 0.012, 0.14, 0.11, "#a0cbc3", 0.014);
