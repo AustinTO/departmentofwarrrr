@@ -366,6 +366,42 @@ export class TableView {
       this.table.add(m);
       return m;
     };
+    const addCashStack = (x: number, z: number, rotation: number) => {
+      const stack = new THREE.Group();
+      stack.position.set(x, 0.006, z);
+      stack.rotation.y = rotation;
+      const paper = new THREE.MeshStandardMaterial({
+        color: "#91b66e",
+        roughness: 0.82,
+        metalness: 0.02,
+      });
+      const edge = new THREE.MeshStandardMaterial({
+        color: "#d3b45c",
+        roughness: 0.35,
+        metalness: 0.65,
+      });
+      for (let layer = 0; layer < 4; layer++) {
+        const bill = new THREE.Mesh(
+          new THREE.BoxGeometry(0.066, 0.012, 0.036),
+          paper,
+        );
+        bill.position.y = layer * 0.012;
+        stack.add(bill);
+        const band = new THREE.Mesh(
+          new THREE.BoxGeometry(0.010, 0.014, 0.039),
+          edge,
+        );
+        band.position.set(0.012, layer * 0.012, 0);
+        stack.add(band);
+      }
+      const seal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.009, 0.009, 0.002, 16),
+        this.material("#e8c75e"),
+      );
+      seal.position.set(-0.017, 0.052, 0);
+      stack.add(seal);
+      this.table.add(stack);
+    };
     for (const sign of [-1, 1]) {
       const sling = new THREE.Group();
       const points = [
@@ -694,6 +730,26 @@ export class TableView {
         "#813e30",
         0.009,
       );
+    }
+    addCashStack(-0.235, 0.335, -0.22);
+    addCashStack(0.225, 0.315, 0.28);
+    this.text("WAR CHEST", -0.235, 0.006, 0.382, 0.095, "#e7cf7f", 0.014);
+    this.text("CONTRACTOR CASH", 0.225, 0.006, 0.362, 0.115, "#e7cf7f", 0.012);
+    // Small runway-style lamps make the rails and the elevated route legible.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 5; i++) {
+        const lampMaterial = new THREE.MeshStandardMaterial({
+          color: i % 2 ? "#55d9d4" : "#e6c85d",
+          emissive: i % 2 ? "#55d9d4" : "#e6c85d",
+          emissiveIntensity: 0.65,
+        });
+        const lamp = new THREE.Mesh(
+          new THREE.SphereGeometry(0.0045, 8, 6),
+          lampMaterial,
+        );
+        lamp.position.set(side * (0.292 - i * 0.012), 0.048, -0.40 + i * 0.105);
+        this.table.add(lamp);
+      }
     }
   }
   hit(id: string) {
