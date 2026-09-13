@@ -298,6 +298,22 @@ export class TableView {
       c.fillStyle = "#acac4d35";
       c.fill();
       c.restore();
+      // Cartoon corruption collage: money rain, a contractor mansion, and a
+      // tiny missile parade stay low-contrast so the physical shot paths win.
+      c.save();
+      c.globalAlpha = 0.62;
+      for (const [x, y, angle] of [[150, 470, -0.18], [858, 620, 0.22], [180, 1240, 0.1], [840, 1410, -0.2]]) {
+        c.save(); c.translate(x, y); c.rotate(angle);
+        c.fillStyle = "#79a85d"; c.fillRect(-34, -12, 68, 24);
+        c.strokeStyle = "#d6d783"; c.strokeRect(-30, -9, 60, 18);
+        c.fillStyle = "#315f42"; c.font = "bold 28px Georgia"; c.textAlign = "center"; c.fillText("$", 0, 10); c.restore();
+      }
+      c.fillStyle = "#bd92583d"; c.beginPath(); c.moveTo(710, 420); c.lineTo(840, 420); c.lineTo(840, 480); c.lineTo(710, 480); c.closePath(); c.fill();
+      c.fillStyle = "#c9ae683d"; c.fillRect(742, 374, 74, 48); c.fillRect(728, 389, 102, 33);
+      c.fillStyle = "#e3c66d55"; c.beginPath(); c.arc(778, 388, 11, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#d9644f66"; c.lineWidth = 12;
+      for (const x of [205, 820]) { c.beginPath(); c.moveTo(x, 820); c.lineTo(x + 40, 930); c.stroke(); c.beginPath(); c.moveTo(x + 40, 930); c.lineTo(x + 18, 908); c.moveTo(x + 40, 930); c.lineTo(x + 32, 900); c.stroke(); }
+      c.restore();
       c.textAlign = "center";
       c.fillStyle = "#e5cb65";
       c.font = "bold 27px sans-serif";
@@ -352,7 +368,6 @@ export class TableView {
     );
     apron.position.set(0, 0.009, 0.555);
     this.table.add(apron);
-    this.text("APPROVED IN PRINCIPLE", 0, 0.022, 0.558, 0.36, "#b5a17a", 0.023);
     const detailBox = (
       size: [number, number, number],
       position: [number, number, number],
@@ -447,38 +462,9 @@ export class TableView {
       this.table.add(sling);
       this.slingBands.set(`sling-${sign}`, sling);
     }
-    // A dedicated plaque texture preserves readable title and division lines;
-    // it is raised above the orbit so the rails cannot slice through its text.
-    detailBox([0.52, 0.014, 0.105], [-0.015, 0.096, -0.561], "#a5bbc6");
-    const plaqueTexture = paintTexture(1024, 224, (c) => {
-      c.fillStyle = "#10372e";
-      c.fillRect(0, 0, 1024, 224);
-      c.strokeStyle = "#b7a451";
-      c.lineWidth = 5;
-      c.strokeRect(12, 12, 1000, 200);
-      c.textAlign = "center";
-      c.textBaseline = "middle";
-      c.fillStyle = "#f4d454";
-      c.font = "bold 67px Georgia";
-      c.fillText("★ APPROPRIATIONS ★", 512, 72, 960);
-      c.fillStyle = "#9bc6ae";
-      c.font = "bold 29px Arial";
-      c.fillText("DEPARTMENT OF WARRR", 512, 142);
-      c.font = "24px Arial";
-      c.fillText(
-        "PROCUREMENT DIVISION • MONEY NOW, CAPABILITY LATER",
-        512,
-        182,
-        950,
-      );
-    });
-    const plaque = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.505, 0.096),
-      new THREE.MeshBasicMaterial({ map: plaqueTexture }),
-    );
-    plaque.rotation.x = -Math.PI / 2;
-    plaque.position.set(-0.015, 0.105, -0.561);
-    this.table.add(plaque);
+    const seal = new THREE.Mesh(new THREE.TorusGeometry(0.070, 0.006, 8, 32), this.material("#d9be5f"));
+    seal.rotation.x = Math.PI / 2; seal.position.set(0, 0.026, -0.535); this.table.add(seal);
+    this.text("★ WARRR ★", 0, 0.033, -0.535, 0.095, "#f0d26a", 0.018);
     for (const b of BUMPERS) {
       const assembly = new THREE.Group();
       assembly.position.set(b.x, 0, b.z);
@@ -566,30 +552,6 @@ export class TableView {
         bolt.position.set(Math.cos(a) * 0.045, 0.021, Math.sin(a) * 0.045);
         assembly.add(bolt);
       }
-      this.text(
-        `${b.label} ${b.sub}`,
-        b.x,
-        0.004,
-        b.z + 0.073,
-        0.145,
-        "#f2e3ad",
-        0.017,
-      );
-      this.text(
-        b.id === "sole-source"
-          ? "NO COMPETITION"
-          : b.id === "cost-overrun"
-            ? "+ $2 BILLION"
-            : b.id === "emergency-funding"
-              ? "NO TIME FOR QUESTIONS"
-              : "JUST ONE MORE THING",
-        b.x,
-        0.003,
-        b.z + 0.091,
-        0.145,
-        b.color,
-        0.013,
-      );
     }
     this.text("SUPPLEMENTAL", -0.18, 0.012, 0.115, 0.12, "#65ead2", 0.018);
     this.text("FUNDING RAMP", -0.18, 0.012, 0.14, 0.11, "#a0cbc3", 0.014);
@@ -642,6 +604,14 @@ export class TableView {
           );
           handle.rotation.y = (i * Math.PI) / 3;
         }
+        const vaultTexture = paintTexture(160, 160, (ctx) => {
+          ctx.clearRect(0, 0, 160, 160); ctx.fillStyle = target.color;
+          ctx.beginPath(); ctx.arc(80, 80, 70, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#f2e3ad"; ctx.lineWidth = 8; ctx.stroke();
+          ctx.fillStyle = "#18252d"; ctx.font = "bold 42px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("$", 80, 80);
+        });
+        const vaultBadge = new THREE.Sprite(new THREE.SpriteMaterial({ map: vaultTexture, depthTest: false }));
+        vaultBadge.scale.set(0.045, 0.045, 1); vaultBadge.position.set(target.x, 0.052, target.z); vaultBadge.renderOrder = 3; this.table.add(vaultBadge);
       } else {
         const targetY = target.id === "ramp-review" ? 0.155 : 0.056;
         const face = detailBox(
@@ -650,34 +620,18 @@ export class TableView {
           "#18372f",
         );
         face.material = lamp;
-        this.text(
-          target.id === "audit" ? "!" : "TOP SECRET",
-          target.x,
-          targetY + 0.004,
-          target.z,
-          0.044,
-          "#162832",
-          0.017,
-        );
+        const targetTexture = paintTexture(160, 160, (ctx) => {
+          ctx.clearRect(0, 0, 160, 160);
+          ctx.fillStyle = target.color;
+          ctx.beginPath(); ctx.arc(80, 80, 70, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#f6e7b2"; ctx.lineWidth = 8; ctx.stroke();
+          ctx.fillStyle = "#19342f"; ctx.font = "bold 48px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(target.id === "audit" ? "!" : target.id === "ramp-review" ? "R" : "TOP", 80, 80);
+        });
+        const targetBadge = new THREE.Sprite(new THREE.SpriteMaterial({ map: targetTexture, depthTest: false }));
+        targetBadge.scale.set(0.050, 0.050, 1); targetBadge.position.set(target.x, targetY + 0.012, target.z); targetBadge.renderOrder = 3;
+        this.table.add(targetBadge);
       }
-      this.text(
-        target.label,
-        target.x,
-        target.id === "ramp-review" ? 0.012 : 0.002,
-        target.z + 0.047,
-        target.id === "black-budget" ? 0.115 : 0.099,
-        target.color,
-        0.017,
-      );
-      this.text(
-        target.sub,
-        target.x,
-        0.002,
-        target.z + 0.064,
-        0.065,
-        "#d5d3b3",
-        0.013,
-      );
     }
     // Redacted contract sheets and dotted routes extend the original illustrated
     // playfield vocabulary onto the physical deck.
