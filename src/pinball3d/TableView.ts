@@ -75,6 +75,8 @@ export class TableView {
   private bumperLights = new Map<string, THREE.PointLight>();
   private cameraActionRemaining = 0;
   private teleporters = new Map<string, THREE.Group>();
+  private featureAssemblies = new Map<string, THREE.Group>();
+  private featureLights = new Map<string, THREE.PointLight>();
   constructor() {
     this.scene.background = new THREE.Color("#08251d");
     this.table.rotation.x = TABLE.tilt;
@@ -84,6 +86,9 @@ export class TableView {
     this.scene.add(new THREE.HemisphereLight("#d0eeef", "#283547", 2.0));
     const light = new THREE.DirectionalLight("#ffdfa0", 3.4);
     light.position.set(-1, 2, 1);
+    light.castShadow = true;
+    light.shadow.mapSize.set(512, 512);
+    light.shadow.bias = -0.0005;
     this.scene.add(light);
     // Group static geometry by material: a curved ramp has many simple physical
     // segments but only a few GPU draw calls.
@@ -106,6 +111,7 @@ export class TableView {
     for (const [color, shapes] of batches) {
       const combined = mergeGeometries(shapes);
       const mesh = new THREE.Mesh(combined, this.material(color));
+      mesh.receiveShadow = true;
       this.table.add(mesh);
       for (const g of shapes) g.dispose();
     }
@@ -599,6 +605,8 @@ export class TableView {
       insert.position.y = feature.kind === "scoop" ? 0.040 : feature.kind === "printer" ? 0.070 : 0.064;
       insert.renderOrder = 3; group.add(insert);
       this.table.add(group);
+      this.featureAssemblies.set(feature.id, group);
+      this.featureLights.set(feature.id, light);
     }
     for (const portal of TELEPORTERS) {
       const group = new THREE.Group();
@@ -813,6 +821,10 @@ export class TableView {
       ? this.slingBands.get(id.includes("--1") ? "sling--1" : "sling-1")
       : undefined;
     if (sling) sling.scale.set(1.08, 0.72, 1.08);
+    const feature = this.featureAssemblies.get(id);
+    if (feature) feature.scale.setScalar(1.22);
+    const featureLight = this.featureLights.get(id);
+    if (featureLight) featureLight.intensity = 2.2;
   }
   teleport(id: string) {
     const entry = this.teleporters.get(id);
@@ -881,6 +893,12 @@ export class TableView {
     for (const group of this.teleporters.values()) {
       group.rotation.y += dt * 2.4;
       group.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 5));
+    }
+    for (const [id, group] of this.featureAssemblies) {
+      group.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 10));
+      if (id === "budget-printer") group.rotation.y += dt * 0.25;
+      const light = this.featureLights.get(id);
+      if (light) light.intensity = THREE.MathUtils.lerp(light.intensity, 0.25, Math.min(1, dt * 7));
     }
   }
   resize(width: number, height: number) {
