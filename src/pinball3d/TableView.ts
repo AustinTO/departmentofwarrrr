@@ -301,17 +301,17 @@ export class TableView {
       // Cartoon corruption collage: money rain, a contractor mansion, and a
       // tiny missile parade stay low-contrast so the physical shot paths win.
       c.save();
-      c.globalAlpha = 0.62;
+      c.globalAlpha = 0.92;
       for (const [x, y, angle] of [[150, 470, -0.18], [858, 620, 0.22], [180, 1240, 0.1], [840, 1410, -0.2]]) {
         c.save(); c.translate(x, y); c.rotate(angle);
         c.fillStyle = "#79a85d"; c.fillRect(-34, -12, 68, 24);
         c.strokeStyle = "#d6d783"; c.strokeRect(-30, -9, 60, 18);
         c.fillStyle = "#315f42"; c.font = "bold 28px Georgia"; c.textAlign = "center"; c.fillText("$", 0, 10); c.restore();
       }
-      c.fillStyle = "#bd92583d"; c.beginPath(); c.moveTo(710, 420); c.lineTo(840, 420); c.lineTo(840, 480); c.lineTo(710, 480); c.closePath(); c.fill();
-      c.fillStyle = "#c9ae683d"; c.fillRect(742, 374, 74, 48); c.fillRect(728, 389, 102, 33);
-      c.fillStyle = "#e3c66d55"; c.beginPath(); c.arc(778, 388, 11, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = "#d9644f66"; c.lineWidth = 12;
+      c.fillStyle = "#bd9258a8"; c.beginPath(); c.moveTo(710, 420); c.lineTo(840, 420); c.lineTo(840, 480); c.lineTo(710, 480); c.closePath(); c.fill();
+      c.fillStyle = "#c9ae68a8"; c.fillRect(742, 374, 74, 48); c.fillRect(728, 389, 102, 33);
+      c.fillStyle = "#f3d879cc"; c.beginPath(); c.arc(778, 388, 11, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#d9644fcc"; c.lineWidth = 12;
       for (const x of [205, 820]) { c.beginPath(); c.moveTo(x, 820); c.lineTo(x + 40, 930); c.stroke(); c.beginPath(); c.moveTo(x + 40, 930); c.lineTo(x + 18, 908); c.moveTo(x + 40, 930); c.lineTo(x + 32, 900); c.stroke(); }
       c.restore();
       c.textAlign = "center";
@@ -342,12 +342,6 @@ export class TableView {
       map: texture,
       roughness: 0.68,
       metalness: 0.08,
-    });
-    new THREE.TextureLoader().load("/assets/pinball/playfield.png", (original) => {
-      original.colorSpace = THREE.SRGBColorSpace;
-      original.anisotropy = 4;
-      fieldMaterial.map = original;
-      fieldMaterial.needsUpdate = true;
     });
     const field = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 1.2), fieldMaterial);
     field.rotation.x = -Math.PI / 2;
