@@ -57,6 +57,10 @@ export const FEATURE_TARGETS = [
   { id: "drop-review", x: 0, z: 0.165, label: "REVIEW", color: "#64d8ca", kind: "drop" },
   { id: "drop-approve", x: 0.052, z: 0.165, label: "APPROVE", color: "#64d8ca", kind: "drop" },
 ];
+export const TELEPORTERS = [
+  { id: "classified-transfer-left", x: -0.245, z: -0.115, exitId: "classified-transfer-right", color: "#63e0d1" },
+  { id: "classified-transfer-right", x: 0.115, z: -0.145, exitId: "classified-transfer-left", color: "#c58cff" },
+];
 export const BONUS_TARGETS = [
   {
     id: "audit",
@@ -219,6 +223,17 @@ export function makeTable(): Part[] {
       role: "bumper",
       color: b.color,
     });
+  for (const portal of TELEPORTERS) {
+    parts.push({
+      id: portal.id,
+      kind: "cylinder",
+      position: [portal.x, 0.018, portal.z],
+      radius: 0.029,
+      height: 0.036,
+      role: "sensor",
+      color: portal.color,
+    });
+  }
   for (const feature of FEATURE_TARGETS) {
     if (feature.kind === "scoop" || feature.kind === "printer") {
       parts.push({

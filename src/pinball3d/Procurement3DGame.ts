@@ -331,6 +331,11 @@ export class Procurement3DGame {
         this.say("MARSHAL NUDGE • Ball returned to the hearing.");
         this.tone(220, 0.08);
       }
+      if (e.type === "teleport") {
+        this.view!.teleport(e.id);
+        this.say("CLASSIFIED TRANSFER • Ball rerouted through a black ledger.");
+        this.tone(720, 0.18);
+      }
       if (e.type === "drain") {
         this.balls--;
         this.contract.state.combo = 0;

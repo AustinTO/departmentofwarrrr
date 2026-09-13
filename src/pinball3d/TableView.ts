@@ -8,6 +8,7 @@ import {
   BONUS_TARGETS,
   COMMITTEE_TARGET_IDS,
   FEATURE_TARGETS,
+  TELEPORTERS,
   RAMP_SAMPLES,
   FLIPPERS,
   flipperVertices,
@@ -73,6 +74,7 @@ export class TableView {
   private plunger = new THREE.Group();
   private bumperLights = new Map<string, THREE.PointLight>();
   private cameraActionRemaining = 0;
+  private teleporters = new Map<string, THREE.Group>();
   constructor() {
     this.scene.background = new THREE.Color("#08251d");
     this.table.rotation.x = TABLE.tilt;
@@ -598,6 +600,37 @@ export class TableView {
       insert.renderOrder = 3; group.add(insert);
       this.table.add(group);
     }
+    for (const portal of TELEPORTERS) {
+      const group = new THREE.Group();
+      group.position.set(portal.x, 0.008, portal.z);
+      const outer = new THREE.Mesh(
+        new THREE.TorusGeometry(0.034, 0.005, 10, 32),
+        this.material(portal.color),
+      );
+      outer.rotation.x = Math.PI / 2;
+      group.add(outer);
+      const inner = new THREE.Mesh(
+        new THREE.CircleGeometry(0.027, 32),
+        new THREE.MeshBasicMaterial({ color: "#101833", transparent: true, opacity: 0.9 }),
+      );
+      inner.rotation.x = -Math.PI / 2;
+      inner.position.y = 0.003;
+      group.add(inner);
+      for (let i = 0; i < 6; i++) {
+        const arc = new THREE.Mesh(
+          new THREE.TorusGeometry(0.017 + i * 0.002, 0.0015, 6, 16, Math.PI * 0.72),
+          this.material(i % 2 ? "#e4d56e" : portal.color),
+        );
+        arc.rotation.set(-Math.PI / 2, 0, i * 0.92);
+        arc.position.y = 0.006 + i * 0.0005;
+        group.add(arc);
+      }
+      const glow = new THREE.PointLight(portal.color, 0.55, 0.17, 2);
+      glow.position.y = 0.07;
+      group.add(glow);
+      this.table.add(group);
+      this.teleporters.set(portal.id, group);
+    }
     this.text("SUPPLEMENTAL", -0.18, 0.012, 0.115, 0.12, "#65ead2", 0.018);
     this.text("FUNDING RAMP", -0.18, 0.012, 0.14, 0.11, "#a0cbc3", 0.014);
     this.text(
@@ -781,6 +814,13 @@ export class TableView {
       : undefined;
     if (sling) sling.scale.set(1.08, 0.72, 1.08);
   }
+  teleport(id: string) {
+    const entry = this.teleporters.get(id);
+    const exitId = TELEPORTERS.find((portal) => portal.id === id)?.exitId;
+    const exit = exitId ? this.teleporters.get(exitId) : undefined;
+    if (entry) entry.scale.setScalar(1.65);
+    if (exit) exit.scale.setScalar(1.35);
+  }
   setPlunger(charge: number) {
     this.plunger.position.z = 0.565 + charge * 0.045;
   }
@@ -837,6 +877,10 @@ export class TableView {
         ? this.slingBands.get(id.includes("--1") ? "sling--1" : "sling-1")
         : undefined;
       if (sling) sling.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 18));
+    }
+    for (const group of this.teleporters.values()) {
+      group.rotation.y += dt * 2.4;
+      group.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 5));
     }
   }
   resize(width: number, height: number) {

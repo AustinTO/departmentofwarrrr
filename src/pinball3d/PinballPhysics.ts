@@ -4,6 +4,7 @@ import {
   TABLE,
   TABLE_PARTS,
   FLIPPERS,
+  TELEPORTERS,
   flipperVertices,
   type Point,
   type Part,
@@ -11,7 +12,7 @@ import {
 
 export type Side = "left" | "right";
 export type PhysicsEvent = {
-  type: "hit" | "drain" | "ramp" | "launch" | "save" | "unstuck";
+  type: "hit" | "drain" | "ramp" | "launch" | "save" | "unstuck" | "teleport";
   id: string;
 };
 const tilt = new Quaternion().setFromEuler(new Euler(TABLE.tilt, 0, 0));
@@ -39,6 +40,7 @@ export class PinballPhysics {
   private rampArmed = false;
   private lastMotionAt = 0;
   private unstuckSide = -1;
+  private teleportLockedUntil = 0;
   state: "ready" | "playing" | "drained" = "ready";
   private constructor() {
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -219,6 +221,25 @@ export class PinballPhysics {
       if (!started || this.state !== "playing") return;
       const part = this.colliderIds.get(a) ?? this.colliderIds.get(b);
       if (!part || !["bumper", "target", "sensor", "sling"].includes(part.role)) return;
+      const portal = TELEPORTERS.find((entry) => entry.id === part.id);
+      if (portal) {
+        if (this.time < this.teleportLockedUntil) return;
+        const exit = TELEPORTERS.find((entry) => entry.id === portal.exitId)!;
+        const velocity = this.velocity;
+        this.ball.setTranslation(worldPoint([exit.x, 0.048, exit.z]), true);
+        this.ball.setLinvel(
+          worldPoint([
+            velocity.x * 0.84 + (exit.x > 0 ? -0.16 : 0.16),
+            Math.max(velocity.y * 0.35, 0.10),
+            Math.min(velocity.z * 0.84, -0.75),
+          ]),
+          true,
+        );
+        this.teleportLockedUntil = this.time + 0.45;
+        this.lastMotionAt = this.time;
+        this.events.push({ type: "teleport", id: portal.id });
+        return;
+      }
       if ((this.cooldown.get(part.id) ?? -1) > this.time) return;
       this.cooldown.set(part.id, this.time + 0.16);
       this.events.push({ type: "hit", id: part.id });

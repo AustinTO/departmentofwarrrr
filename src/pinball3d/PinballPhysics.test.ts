@@ -83,6 +83,20 @@ describe("real Rapier playability", () => {
     expect(maxY).toBeGreaterThan(0.12);
     expect(complete).toBe(true);
   });
+  it("transfers through classified portals once without an immediate return loop", async () => {
+    const p = await create();
+    p.setBall([-0.245, 0.020, -0.115], [0, 0, -0.8]);
+    let transfers = 0;
+    let exitX = -1;
+    for (let i = 0; i < 70; i++) {
+      p.step(1 / 120, idle, false);
+      const events = p.drainEvents();
+      if (events.some((event) => event.type === "teleport")) exitX = p.ballPosition.x;
+      transfers += events.filter((event) => event.type === "teleport").length;
+    }
+    expect(transfers).toBe(1);
+    expect(exitX).toBeGreaterThan(0.08);
+  });
   it("emits one drain and cannot score while parked", async () => {
     const p = await create();
     p.setBall([0, 0.018, 0.59], [0, 0, 1]);
