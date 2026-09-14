@@ -242,7 +242,7 @@ export function makeTable(): Part[] {
         position: [feature.x, 0.026, feature.z],
         radius: feature.kind === "printer" ? 0.030 : 0.036,
         height: feature.kind === "printer" ? 0.052 : 0.034,
-        role: "target",
+        role: feature.kind === "scoop" ? "sensor" : "target",
         color: feature.color,
       });
     } else if (feature.kind === "chest") {

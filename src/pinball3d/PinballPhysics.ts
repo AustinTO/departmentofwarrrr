@@ -244,6 +244,15 @@ export class PinballPhysics {
         this.events.push({ type: "teleport", id: portal.id });
         return;
       }
+      if (part.id === "contract-award") {
+        // The Award scoop is a sensor plus kicker: never leave the ball inside
+        // a visual hole without an explicit, playable eject trajectory.
+        this.ball.setTranslation(worldPoint([0.02, 0.075, -0.40]), true);
+        this.ball.setLinvel(worldPoint([0.28, 0.12, 0.95]), true);
+        this.lastMotionAt = this.time;
+        this.events.push({ type: "hit", id: "contract-award" });
+        return;
+      }
       if ((this.cooldown.get(part.id) ?? -1) > this.time) return;
       this.cooldown.set(part.id, this.time + 0.16);
       this.events.push({ type: "hit", id: part.id });

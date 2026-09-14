@@ -104,6 +104,14 @@ describe("real Rapier playability", () => {
     expect(p.velocity.z).toBeLessThan(-0.2);
     expect(p.ballPosition.z).toBeLessThan(0.15);
   });
+  it("ejects the Award scoop instead of swallowing the ball", async () => {
+    const p = await create();
+    p.setBall([0, 0.040, -0.500], [0, 0, -0.4]);
+    for (let i = 0; i < 18; i++) p.step(1 / 120, idle, false);
+    expect(p.state).toBe("playing");
+    expect(p.ballPosition.z).toBeGreaterThan(-0.48);
+    expect(p.drainEvents().some((event) => event.id === "contract-award")).toBe(true);
+  });
   it("emits one drain and cannot score while parked", async () => {
     const p = await create();
     p.setBall([0, 0.018, 0.59], [0, 0, 1]);
