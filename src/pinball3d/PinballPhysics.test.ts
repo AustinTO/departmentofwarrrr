@@ -97,6 +97,13 @@ describe("real Rapier playability", () => {
     expect(transfers).toBe(1);
     expect(exitX).toBeGreaterThan(0.08);
   });
+  it("lets the Bid/Review/Approve sensors pass the ball through without a bounce", async () => {
+    const p = await create();
+    p.setBall([-0.052, 0.055, 0.165], [0, 0, -0.8]);
+    for (let i = 0; i < 12; i++) p.step(1 / 120, idle, false);
+    expect(p.velocity.z).toBeLessThan(-0.2);
+    expect(p.ballPosition.z).toBeLessThan(0.15);
+  });
   it("emits one drain and cannot score while parked", async () => {
     const p = await create();
     p.setBall([0, 0.018, 0.59], [0, 0, 1]);

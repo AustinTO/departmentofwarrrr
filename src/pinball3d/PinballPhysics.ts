@@ -4,6 +4,7 @@ import {
   TABLE,
   TABLE_PARTS,
   FLIPPERS,
+  FEATURE_TARGETS,
   TELEPORTERS,
   flipperVertices,
   type Point,
@@ -52,6 +53,9 @@ export class PinballPhysics {
       RAPIER.RigidBodyDesc.fixed().setRotation(tilt),
     );
     for (const part of TABLE_PARTS) {
+      // The lower approval bank is a through-target: it emits from proximity
+      // and deliberately has no physics collider to interfere with the shot.
+      if (part.id.startsWith("drop-")) continue;
       let desc: RAPIER.ColliderDesc;
       if (part.kind === "box")
         desc = RAPIER.ColliderDesc.cuboid(
@@ -261,6 +265,13 @@ export class PinballPhysics {
     });
     if (this.state !== "playing") return;
     const p = this.ballPosition;
+    for (const feature of FEATURE_TARGETS) {
+      if (feature.kind !== "drop") continue;
+      if (p.distanceTo(new Vector3(feature.x, 0.02, feature.z)) < 0.032 && (this.cooldown.get(feature.id) ?? -1) <= this.time) {
+        this.cooldown.set(feature.id, this.time + 0.28);
+        this.events.push({ type: "hit", id: feature.id });
+      }
+    }
     if (p.x < -0.15 && p.z < -0.02 && p.z > -0.18 && p.y > 0.026)
       this.rampArmed = true;
     if (this.rampArmed && p.x > 0.1 && p.z > -0.16 && p.y > 0.075) {
