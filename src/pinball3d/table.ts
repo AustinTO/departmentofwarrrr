@@ -248,7 +248,9 @@ export function makeTable(): Part[] {
     } else if (feature.kind === "chest") {
       box(feature.id, [feature.x, 0.030, feature.z], [0.062, 0.050, 0.035], "target", feature.color);
     } else {
-      box(feature.id, [feature.x, 0.026, feature.z], [0.026, 0.042, 0.012], "target", feature.color);
+      // Drop-bank inserts are overlap sensors: they record Bid/Review/Approve
+      // without becoming three solid obstacles in the lower shooting lane.
+      box(feature.id, [feature.x, 0.012, feature.z], [0.022, 0.018, 0.010], "sensor", feature.color);
     }
   }
   for (const target of BONUS_TARGETS) {

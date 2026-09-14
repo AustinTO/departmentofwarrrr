@@ -590,8 +590,10 @@ export class TableView {
         const lock = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.004), this.material("#f4d979"));
         lock.position.set(0, 0.030, 0.022); group.add(lock);
       } else {
-        const drop = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.045, 0.014), this.material(feature.color));
-        drop.position.y = 0.026; group.add(drop);
+        const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.006, 24), this.material(feature.color));
+        drop.position.y = 0.018; group.add(drop);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.017, 0.002, 6, 20), this.material("#e8e1ba"));
+        ring.rotation.x = Math.PI / 2; ring.position.y = 0.022; group.add(ring);
       }
       const insertTexture = paintTexture(160, 160, (ctx) => {
         ctx.clearRect(0, 0, 160, 160); ctx.fillStyle = feature.color;
@@ -601,7 +603,7 @@ export class TableView {
         ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(feature.label, 80, 80, 130);
       });
       const insert = new THREE.Sprite(new THREE.SpriteMaterial({ map: insertTexture, depthTest: false }));
-      insert.scale.set(feature.kind === "drop" ? 0.034 : 0.055, feature.kind === "drop" ? 0.034 : 0.055, 1);
+      insert.scale.set(feature.kind === "drop" ? 0.026 : 0.055, feature.kind === "drop" ? 0.026 : 0.055, 1);
       insert.position.y = feature.kind === "scoop" ? 0.040 : feature.kind === "printer" ? 0.070 : 0.064;
       insert.renderOrder = 3; group.add(insert);
       this.table.add(group);
