@@ -94,12 +94,20 @@ export const FLIPPERS = {
     sign: 1,
     rest: -0.38,
     active: 0.62,
+    pressAcceleration: 1850,
+    returnAcceleration: 430,
+    pressSpeed: 27,
+    returnSpeed: 11,
   },
   right: {
     pivot: [0.13, 0.022, 0.405] as Point,
     sign: -1,
     rest: 0.38,
     active: -0.62,
+    pressAcceleration: 1850,
+    returnAcceleration: 430,
+    pressSpeed: 27,
+    returnSpeed: 11,
   },
 };
 /** Rounded tapered prism, shared by Rapier convex hull and Three's convex geometry. */

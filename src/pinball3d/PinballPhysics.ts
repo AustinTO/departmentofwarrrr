@@ -192,15 +192,10 @@ export class PinballPhysics {
       const f = FLIPPERS[side],
         target = input[side] ? f.active : f.rest,
         diff = target - this.flipperAngles[side];
-      const max = input[side] ? 22 : 9;
-      this.angularSpeed[side] = Math.max(
-        -max,
-        Math.min(
-          max,
-          this.angularSpeed[side] +
-            Math.sign(diff) * (input[side] ? 900 : 300) * dt,
-        ),
-      );
+      const desiredSpeed = Math.sign(diff) * (input[side] ? f.pressSpeed : f.returnSpeed);
+      const acceleration = input[side] ? f.pressAcceleration : f.returnAcceleration;
+      const speedDelta = Math.max(-acceleration * dt, Math.min(acceleration * dt, desiredSpeed - this.angularSpeed[side]));
+      this.angularSpeed[side] += speedDelta;
       const delta = this.angularSpeed[side] * dt;
       if (
         Math.abs(delta) >= Math.abs(diff) &&

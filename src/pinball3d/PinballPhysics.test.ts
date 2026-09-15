@@ -69,6 +69,16 @@ describe("real Rapier playability", () => {
       expect(minV).toBeLessThan(-0.8);
     },
   );
+  it("presses a flipper quickly and returns with a softer spring profile", async () => {
+    const p = await create();
+    const rest = p.flipperAngles.left;
+    for (let i = 0; i < 8; i++) p.step(1 / 120, { left: true, right: false }, false);
+    const pressed = p.flipperAngles.left;
+    expect(pressed - rest).toBeGreaterThan(0.18);
+    for (let i = 0; i < 12; i++) p.step(1 / 120, idle, false);
+    expect(p.flipperAngles.left).toBeLessThan(pressed - 0.05);
+    expect(p.flipperAngles.left).toBeGreaterThan(rest - 0.02);
+  });
   it("rolls up the elevated ramp and reaches the exit without path-following", async () => {
     const p = await create();
     p.setBall([-0.185, 0.015, 0.135], [-0.12, 0, -2.8]);
