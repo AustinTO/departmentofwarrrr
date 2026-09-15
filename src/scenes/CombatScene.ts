@@ -449,9 +449,10 @@ export class CombatScene extends Phaser.Scene {
 
     private setupWeaponButtons(width: number, height: number) {
         const weapons = currentRun.availableWeapons();
-        const visible = Math.min(4, weapons.length);
+        // Keep every unlocked weapon visible. Paging behind a MORE button adds
+        // a second tap at the exact moment combat needs a fast switch.
+        const visible = Math.max(1, weapons.length);
         const buttonWidth = width / visible;
-        let scrollOffset = 0;
 
         this.add.image(width / 2, height - 52, SHEETS.uiChrome.key, 3)
             .setDisplaySize(width - 20, 118)
@@ -462,7 +463,7 @@ export class CombatScene extends Phaser.Scene {
         const rebuild = () => {
             tray.removeAll(true);
             this.weaponButtons.clear();
-            const page = weapons.slice(scrollOffset, scrollOffset + visible);
+            const page = weapons;
             page.forEach((type, i) => {
                 const x = i * buttonWidth + buttonWidth / 2;
                 const y = height - 50;
@@ -484,21 +485,6 @@ export class CombatScene extends Phaser.Scene {
             });
             this.updateWeaponSelectionFeedback();
         };
-
-        if (weapons.length > visible) {
-            const cycle = this.add.rectangle(width - 36, height - 160, 64, 44, 0x1a3344, 0.95)
-                .setStrokeStyle(2, 0x7df4ff)
-                .setDepth(12)
-                .setInteractive({ useHandCursor: true })
-                .on('pointerdown', () => {
-                    scrollOffset = (scrollOffset + visible) % weapons.length;
-                    rebuild();
-                });
-            this.add.text(width - 36, height - 160, 'MORE', {
-                fontSize: '16px', color: '#7df4ff', fontStyle: 'bold'
-            }).setOrigin(0.5).setDepth(13);
-            void cycle;
-        }
 
         if (!weapons.includes(this.currentWeapon) && weapons[0]) {
             this.currentWeapon = weapons[0];
