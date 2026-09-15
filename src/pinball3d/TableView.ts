@@ -77,6 +77,7 @@ export class TableView {
   private teleporters = new Map<string, THREE.Group>();
   private featureAssemblies = new Map<string, THREE.Group>();
   private featureLights = new Map<string, THREE.PointLight>();
+  private featureKinds = new Map<string, string>();
   constructor() {
     this.scene.background = new THREE.Color("#08251d");
     this.table.rotation.x = TABLE.tilt;
@@ -609,6 +610,18 @@ export class TableView {
       this.table.add(group);
       this.featureAssemblies.set(feature.id, group);
       this.featureLights.set(feature.id, light);
+      this.featureKinds.set(feature.id, feature.kind);
+      if (feature.kind === "spinner") {
+        const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 12), this.material("#d8d3b5"));
+        axle.rotation.z = Math.PI / 2;
+        axle.position.y = 0.045;
+        group.add(axle);
+        for (const side of [-1, 1]) {
+          const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.008, 0.014), this.material(side < 0 ? "#64d8ca" : "#e6c55d"));
+          blade.position.set(side * 0.025, 0.045, 0);
+          group.add(blade);
+        }
+      }
     }
     for (const portal of TELEPORTERS) {
       const group = new THREE.Group();
@@ -824,7 +837,13 @@ export class TableView {
       : undefined;
     if (sling) sling.scale.set(1.08, 0.72, 1.08);
     const feature = this.featureAssemblies.get(id);
-    if (feature) feature.scale.setScalar(1.22);
+    if (feature) {
+      feature.scale.setScalar(1.22);
+      if (id === "drop-bid" || id === "drop-review" || id === "drop-approve") {
+        feature.rotation.x = -0.95;
+      }
+      if (this.featureKinds.get(id) === "spinner") feature.rotation.y += 1.5;
+    }
     const featureLight = this.featureLights.get(id);
     if (featureLight) featureLight.intensity = 2.2;
   }
@@ -898,6 +917,10 @@ export class TableView {
     }
     for (const [id, group] of this.featureAssemblies) {
       group.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 10));
+      if (id === "drop-bid" || id === "drop-review" || id === "drop-approve") {
+        group.rotation.x = THREE.MathUtils.lerp(group.rotation.x, 0, Math.min(1, dt * 8));
+      }
+      if (this.featureKinds.get(id) === "spinner") group.rotation.y += dt * 1.4;
       if (id === "budget-printer") group.rotation.y += dt * 0.25;
       const light = this.featureLights.get(id);
       if (light) light.intensity = THREE.MathUtils.lerp(light.intensity, 0.25, Math.min(1, dt * 7));

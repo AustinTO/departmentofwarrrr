@@ -386,6 +386,11 @@ export class Procurement3DGame {
           value = 2e9 * this.printerHits;
           label = this.printerHits >= 5 ? "UNLIMITED FUNDING LIT" : `BUDGET PRINTER ${this.printerHits}/5`;
         }
+        if (e.id === "spinner") {
+          value = 1.2e9;
+          label = "SPINNER • MARKUP ACCELERATING";
+          delay = 0.08;
+        }
         if (e.id === "war-chest-left" || e.id === "war-chest-right") {
           this.warChests.add(e.id);
           value = 3e9;

@@ -56,6 +56,7 @@ export const FEATURE_TARGETS = [
   { id: "drop-bid", x: -0.052, z: 0.165, label: "BID", color: "#64d8ca", kind: "drop" },
   { id: "drop-review", x: 0, z: 0.165, label: "REVIEW", color: "#64d8ca", kind: "drop" },
   { id: "drop-approve", x: 0.052, z: 0.165, label: "APPROVE", color: "#64d8ca", kind: "drop" },
+  { id: "spinner", x: 0.205, z: 0.170, label: "SPIN", color: "#e6c55d", kind: "spinner" },
 ];
 export const TELEPORTERS = [
   { id: "classified-transfer-left", x: -0.245, z: -0.115, exitId: "classified-transfer-right", color: "#63e0d1" },
@@ -255,6 +256,8 @@ export function makeTable(): Part[] {
       });
     } else if (feature.kind === "chest") {
       box(feature.id, [feature.x, 0.030, feature.z], [0.062, 0.050, 0.035], "target", feature.color);
+    } else if (feature.kind === "spinner") {
+      box(feature.id, [feature.x, 0.035, feature.z], [0.018, 0.060, 0.010], "sensor", feature.color);
     } else {
       // Drop-bank inserts are overlap sensors: they record Bid/Review/Approve
       // without becoming three solid obstacles in the lower shooting lane.
