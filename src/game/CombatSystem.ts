@@ -13,6 +13,17 @@ export interface CombatStats {
     friendliesHit: number;
     comboPeak: number;
     restraintBonus: number;
+    endedEarly: boolean;
+}
+
+export interface GradeBreakdown {
+    grade: string;
+    score: number;
+    survival: number;
+    restraint: number;
+    efficiency: number;
+    chain: number;
+    reasons: string[];
 }
 
 export class CombatSystem {
@@ -27,7 +38,8 @@ export class CombatSystem {
         friendliesSpared: 0,
         friendliesHit: 0,
         comboPeak: 0,
-        restraintBonus: 0
+        restraintBonus: 0,
+        endedEarly: false
     };
 
     public recordWeaponFire(type: WeaponType) {
@@ -90,12 +102,35 @@ export class CombatSystem {
     }
 
     public getGrade(): string {
-        if (this.stats.friendliesHit >= 3) return 'F';
-        if (this.stats.friendliesHit >= 1 && this.stats.comboPeak < 5) return 'C';
-        if (this.stats.friendliesHit === 0 && this.stats.comboPeak >= 10 && this.stats.friendliesSpared >= 2) return 'S';
-        if (this.stats.friendliesHit === 0 && this.stats.friendliesSpared >= 1) return 'A';
-        if (this.stats.friendliesHit === 0) return 'B';
-        return 'C';
+        return this.getGradeBreakdown().grade;
+    }
+
+    public recordEarlyExit() {
+        this.stats.endedEarly = true;
+    }
+
+    public getGradeBreakdown(): GradeBreakdown {
+        const survival = Math.max(0, 100 - this.stats.readinessLoss * 2);
+        const restraint = Math.max(0, Math.min(100, 75 + this.stats.friendliesSpared * 8 - this.stats.friendliesHit * 18));
+        const valuePerMillion = this.stats.threatValueDestroyed / Math.max(1, this.stats.taxpayerBurn / 1_000_000);
+        const efficiency = Math.min(100, 65 + valuePerMillion * 3);
+        const chain = Math.min(100, 40 + this.stats.comboPeak * 6);
+        let score = Math.round(survival * 0.3 + restraint * 0.3 + efficiency * 0.2 + chain * 0.2);
+        if (this.stats.endedEarly) score = Math.max(0, score - 20);
+        let grade = score >= 90 ? 'S' : score >= 75 ? 'A' : score >= 60 ? 'B' : score >= 45 ? 'C' : 'D';
+        if (this.stats.friendliesHit >= 3) {
+            score = Math.min(score, 44);
+            grade = 'F';
+        }
+        const reasons = [
+            `SURVIVAL ${Math.round(survival)}/100 — ${this.stats.readinessLoss} readiness lost`,
+            `RESTRAINT ${Math.round(restraint)}/100 — ${this.stats.friendliesSpared} allies spared, ${this.stats.friendliesHit} hit`,
+            `EFFICIENCY ${Math.round(efficiency)}/100 — ${this.stats.threatsDestroyed} threats for $${Math.round(this.stats.taxpayerBurn).toLocaleString()}`,
+            `CHAIN ${Math.round(chain)}/100 — best chain x${this.stats.comboPeak}`
+        ];
+        if (this.stats.endedEarly) reasons.push('EARLY EXIT: final grade reduced by 20 points; grade bonus forfeited');
+        if (this.stats.friendliesHit >= 3) reasons.push('SEVERE FRIENDLY FIRE: three incidents cap the grade at F');
+        return { grade, score, survival, restraint, efficiency, chain, reasons };
     }
 
     public getStats(): CombatStats {
@@ -114,7 +149,8 @@ export class CombatSystem {
             friendliesSpared: 0,
             friendliesHit: 0,
             comboPeak: 0,
-            restraintBonus: 0
+            restraintBonus: 0,
+            endedEarly: false
         };
     }
 }

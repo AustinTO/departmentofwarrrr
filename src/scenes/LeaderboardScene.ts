@@ -26,6 +26,17 @@ export class LeaderboardScene extends Phaser.Scene {
             fontSize: '22px', color: '#ffcf66', fontStyle: 'bold'
         }).setOrigin(0.5);
 
+        const metrics = currentRun.combatMetrics;
+        const awards = [
+            metrics.alliedContactsSpared >= 3 ? 'ALLY PRESERVATION CITATION' : '',
+            currentRun.taxpayerBurn > 0 && currentRun.contractorProfit / currentRun.taxpayerBurn >= 0.15 ? 'MARGIN REALIZATION AWARD' : '',
+            metrics.threatsDefeated >= 10 ? 'THREAT ELIMINATION COMMENDATION' : '',
+            metrics.alliedContactsHit === 0 ? 'CLEAN CONTACT RECORD' : ''
+        ].filter(Boolean);
+        this.add.text(width / 2, 205, `RUN SEED ${currentRun.campaignSeed}  •  ${awards.join('  •  ') || 'NO COMMENDATIONS RECORDED'}`, {
+            fontSize: '18px', color: '#a8ff93', fontStyle: 'bold', align: 'center', wordWrap: { width: width - 80 }
+        }).setOrigin(0.5);
+
         this.displayScores(width, height);
 
         this.add.container(width / 2 - 220, height - 100)
@@ -106,7 +117,7 @@ export class LeaderboardScene extends Phaser.Scene {
             return;
         }
 
-        let y = 250;
+        let y = 280;
         scores.forEach((score, index) => {
             const rank = `${index + 1}.`;
             const scoreText = `FY ${score.fiscalYear} - ${score.mansions} Mansions - BURN: ${this.formatCurrency(score.burn)}`;

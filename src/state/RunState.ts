@@ -3,6 +3,11 @@ import type { Doctrine } from '../game/config';
 import type { EstateRecord } from '../data/mansions';
 import type { PinballBoardId } from '../game/PinballBoards';
 import { isBoardUnlocked, PINBALL_BOARD_ORDER } from '../game/PinballBoards';
+import { createSeededRandom } from '../game/SeededRandom';
+
+function newCampaignSeed(): number {
+    return Math.floor(Math.random() * 0x100000000) >>> 0;
+}
 
 export interface TheaterState {
     id: string;
@@ -15,9 +20,17 @@ export interface DeliveryBatch {
     fiscalYear: number;
     weaponType: WeaponType;
     quantity: number;
+    destination?: 'active' | 'reserve';
 }
 
 export class RunState {
+    public campaignSeed: number = newCampaignSeed();
+    public randomCounter: number = 0;
+    public authorizedProcurementFY?: number;
+    public lastEventConsequence = '';
+    public eventHistory: string[] = [];
+    public lastPressReleaseHeadline = '';
+    public combatMetrics = { alliedContactsSpared: 0, alliedContactsHit: 0, threatsDefeated: 0, yearsPlayed: 0 };
     public currentFY: number = 2026;
     public globalReadiness: number = 100;
     public taxpayerBurn: number = 0;
@@ -106,6 +119,13 @@ export class RunState {
             || this.productionQueue.length > 0;
     }
 
+    /** Returns the next repeatable random value in this campaign's sequence. */
+    public nextRandom(): number {
+        const random = createSeededRandom((this.campaignSeed + this.randomCounter) >>> 0);
+        this.randomCounter++;
+        return random();
+    }
+
     /** Refresh unlock lists from FY / mansion thresholds. Returns newly unlocked weapon names. */
     public syncUnlocks(): { weapons: WeaponType[]; boards: PinballBoardId[] } {
         const newWeapons: WeaponType[] = [];
@@ -163,6 +183,13 @@ export class RunState {
     /** Return the campaign to a clean, playable first-year state. */
     public reset() {
         this.currentFY = 2026;
+        this.campaignSeed = newCampaignSeed();
+        this.randomCounter = 0;
+        this.authorizedProcurementFY = undefined;
+        this.lastEventConsequence = '';
+        this.eventHistory = [];
+        this.lastPressReleaseHeadline = '';
+        this.combatMetrics = { alliedContactsSpared: 0, alliedContactsHit: 0, threatsDefeated: 0, yearsPlayed: 0 };
         this.globalReadiness = 100;
         this.taxpayerBurn = 0;
         this.contractorProfit = 0;
@@ -187,7 +214,7 @@ export class RunState {
         const fromTheater = this.theaters[fromId];
         const toTheater = this.theaters[toId];
 
-        if (!fromTheater || !toTheater) return false;
+        if (!fromTheater || !toTheater || fromId === toId || !Number.isInteger(quantity) || quantity <= 0) return false;
         if ((fromTheater.inventory[weaponType] || 0) < quantity) return false;
 
         fromTheater.inventory[weaponType] -= quantity;
@@ -217,7 +244,14 @@ export class RunState {
             unlockedBoards: this.unlockedBoards,
             selectedBoard: this.selectedBoard,
             theaters: this.theaters,
-            productionQueue: this.productionQueue
+            productionQueue: this.productionQueue,
+            campaignSeed: this.campaignSeed,
+            randomCounter: this.randomCounter,
+            authorizedProcurementFY: this.authorizedProcurementFY,
+            lastEventConsequence: this.lastEventConsequence,
+            eventHistory: this.eventHistory,
+            lastPressReleaseHeadline: this.lastPressReleaseHeadline,
+            combatMetrics: this.combatMetrics
         };
         localStorage.setItem('warrr_save_v1', JSON.stringify(data));
     }
@@ -229,6 +263,13 @@ export class RunState {
         try {
             const data = JSON.parse(saved) as Partial<RunState>;
             if (typeof data.currentFY === 'number') this.currentFY = data.currentFY;
+            if (typeof data.campaignSeed === 'number') this.campaignSeed = data.campaignSeed >>> 0;
+            if (typeof data.randomCounter === 'number') this.randomCounter = Math.max(0, Math.floor(data.randomCounter));
+            if (typeof data.authorizedProcurementFY === 'number') this.authorizedProcurementFY = data.authorizedProcurementFY;
+            if (typeof data.lastEventConsequence === 'string') this.lastEventConsequence = data.lastEventConsequence;
+            if (Array.isArray(data.eventHistory)) this.eventHistory = data.eventHistory.filter((item): item is string => typeof item === 'string');
+            if (typeof data.lastPressReleaseHeadline === 'string') this.lastPressReleaseHeadline = data.lastPressReleaseHeadline;
+            if (data.combatMetrics && typeof data.combatMetrics === 'object') this.combatMetrics = { ...this.combatMetrics, ...data.combatMetrics };
             if (typeof data.taxpayerBurn === 'number') this.taxpayerBurn = data.taxpayerBurn;
             if (typeof data.contractorProfit === 'number') this.contractorProfit = data.contractorProfit;
             if (typeof data.executiveWealth === 'number') this.executiveWealth = data.executiveWealth;

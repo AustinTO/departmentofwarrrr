@@ -1,5 +1,6 @@
 
 // A collection of satirical news headlines for the ticker.
+import { currentRun } from '../state/RunState';
 export const headlines = [
     "Stock price of drone manufacturer soars after rogue drone 'accidentally' destroys competitor's factory.",
     "General promotes son-in-law's startup for 'revolutionary' new camo pattern that looks suspiciously like his couch.",
@@ -15,3 +16,14 @@ export const headlines = [
     "Space Force now officially accepting applications from aliens.",
     "'We are not at war, we are in a state of kinetic diplomacy,' says press secretary."
 ];
+
+export function campaignHeadlines(): string[] {
+    const metrics = currentRun.combatMetrics;
+    const reactive = [
+        `FY${currentRun.currentFY} readiness stands at ${Math.floor(currentRun.globalReadiness)}%; officials describe the trend as “directionally classified.”`,
+        `${metrics.threatsDefeated} threats defeated; ${metrics.alliedContactsSpared} allied contacts spared. The scoreboard has been submitted for review.`,
+        currentRun.lastEventConsequence ? `Hearing consequence: ${currentRun.lastEventConsequence}` : ''
+    ].filter(Boolean);
+    const headline = headlines[Math.floor(currentRun.nextRandom() * headlines.length)];
+    return [headline, ...reactive];
+}

@@ -1,16 +1,84 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 import { PinballPhysics } from "./PinballPhysics";
-import { TABLE } from "./table";
+import { TABLE, resolveBoardLayout } from "./table";
+import { PINBALL_BOARD_ORDER } from "../game/PinballBoards";
 
 let physics: PinballPhysics | undefined;
 afterEach(() => physics?.dispose());
 const idle = { left: false, right: false };
-async function create() {
-  physics = await PinballPhysics.create();
+async function create(layout = resolveBoardLayout()) {
+  physics = await PinballPhysics.create(layout);
   return physics;
 }
 describe("real Rapier playability", () => {
+  it.each(PINBALL_BOARD_ORDER)("keeps every %s launch power in the shooter exit", async (board) => {
+    for (const power of [0, 0.2, 0.35, 0.5, 0.7, 0.85, 1]) {
+      const p = await create(resolveBoardLayout(board));
+      p.launch(power);
+      let minZ = 1;
+      for (let i = 0; i < 600 && p.state === "playing"; i++) {
+        p.step(1 / 120, idle, false);
+        minZ = Math.min(minZ, p.ballPosition.z);
+      }
+      expect(minZ, `${board}, launch power ${power}`).toBeLessThan(-0.42);
+      p.dispose();
+      physics = undefined;
+    }
+  });
+
+  it.each(PINBALL_BOARD_ORDER)("keeps both flippers and the ramp playable on %s", async (board) => {
+    const layout = resolveBoardLayout(board);
+    for (const side of ["left", "right"] as const) {
+      const p = await create(layout);
+      const sign = side === "left" ? 1 : -1;
+      p.setBall([-sign * 0.072, 0.018, 0.409], [0, 0, 0.25]);
+      let minVz = 0;
+      for (let i = 0; i < 24; i++) {
+        p.step(1 / 120, { left: side === "left", right: side === "right" }, false);
+        minVz = Math.min(minVz, p.velocity.z);
+      }
+      expect(minVz, `${board} ${side} flipper`).toBeLessThan(-0.8);
+      p.dispose();
+      physics = undefined;
+    }
+
+    const p = await create(layout);
+    p.setBall([-0.185, 0.015, 0.135], [-0.12, 0, -2.8]);
+    let maxY = 0;
+    let rampCompleted = false;
+    for (let i = 0; i < 400; i++) {
+      p.step(1 / 120, idle, false);
+      maxY = Math.max(maxY, p.ballPosition.y);
+      rampCompleted ||= p.drainEvents().some((event) => event.type === "ramp");
+      if (p.state !== "playing") break;
+    }
+    expect(maxY, `${board} ramp elevation`).toBeGreaterThan(0.12);
+    expect(rampCompleted, `${board} ramp completion`).toBe(true);
+  });
+
+  it.each(PINBALL_BOARD_ORDER)("keeps repeated feeds finite and contained on %s", async (board) => {
+    const p = await create(resolveBoardLayout(board));
+    for (const [position, velocity] of [
+      [[-0.18, 0.02, 0.12], [-0.1, 0, -2.4]],
+      [[0, 0.04, -0.46], [0.2, 0.1, 0.8]],
+      [[0.25, 0.02, 0.35], [-1.2, 0, -1.1]],
+      [[-0.27, 0.02, 0], [0, 0, -0.8]],
+    ] as const) {
+      p.setBall(position, velocity);
+      for (let i = 0; i < 60 && p.state === "playing"; i++) {
+        p.step(1 / 120, idle, false);
+        const { x, y, z } = p.ballPosition;
+        expect([x, y, z].every(Number.isFinite), `${board} finite feed state`).toBe(true);
+        expect(Math.abs(x), `${board} contained x`).toBeLessThan(0.4);
+        // A drained ball can cross the drain plane by a few centimeters on
+        // the step that emits the event; it must still remain finite/bounded.
+        expect(y, `${board} bounded y`).toBeGreaterThan(-0.2);
+        expect(z, `${board} contained z`).toBeLessThan(0.62);
+      }
+    }
+  });
+
   it("supports a falling ball on the inclined deck instead of draining through it", async () => {
     const p = await create();
     p.setBall([0, 0.08, 0.18]);
@@ -95,7 +163,7 @@ describe("real Rapier playability", () => {
   });
   it("transfers through classified portals once without an immediate return loop", async () => {
     const p = await create();
-    p.setBall([-0.245, 0.020, -0.115], [0, 0, -0.8]);
+    p.setBall([-0.27, 0.020, 0], [0, 0, -0.8]);
     let transfers = 0;
     let exitX = -1;
     for (let i = 0; i < 70; i++) {
@@ -122,8 +190,8 @@ describe("real Rapier playability", () => {
     expect(p.ballPosition.z).toBeGreaterThan(-0.48);
     expect(p.drainEvents().some((event) => event.id === "contract-award")).toBe(true);
   });
-  it("emits one drain and cannot score while parked", async () => {
-    const p = await create();
+  it.each(PINBALL_BOARD_ORDER)("emits one drain and cannot score while parked on %s", async (board) => {
+    const p = await create(resolveBoardLayout(board));
     p.setBall([0, 0.018, 0.59], [0, 0, 1]);
     for (let i = 0; i < 100; i++) p.step(1 / 120, idle, false);
     expect(p.drainEvents().filter((e) => e.type === "drain")).toHaveLength(1);

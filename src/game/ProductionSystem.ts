@@ -35,8 +35,8 @@ export class ProductionSystem {
         // Deliver ready batches
         const delivered = currentRun.productionQueue.filter(b => b.fiscalYear <= currentRun.currentFY);
         delivered.forEach(batch => {
-            const reserve = currentRun.theaters['reserve'];
-            reserve.inventory[batch.weaponType] = (reserve.inventory[batch.weaponType] || 0) + batch.quantity;
+            const destination = batch.destination === 'active' ? currentRun.theaters.active : currentRun.theaters.reserve;
+            destination.inventory[batch.weaponType] = (destination.inventory[batch.weaponType] || 0) + batch.quantity;
         });
 
         // Remove delivered from queue

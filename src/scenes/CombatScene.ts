@@ -13,6 +13,16 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { SHEETS } from '../game/Sprites';
 import { hostileThreatsNear, pickDistinctTargets, steerSeeker } from '../game/SeekingProjectiles';
 import type { SeekerShotData } from '../game/SeekingProjectiles';
+import { adjacentWeapon, weaponAmmoLabel, weaponRangeLabel, weaponWheelSlots } from '../game/WeaponWheel';
+import { isTargetInWeaponRange } from '../game/config';
+
+interface WeaponWheelVisual {
+    button: Phaser.GameObjects.Arc;
+    ring: Phaser.GameObjects.Arc;
+    icon: Phaser.GameObjects.Image;
+    label: Phaser.GameObjects.Text;
+    ammo: Phaser.GameObjects.Text;
+}
 
 export class CombatScene extends Phaser.Scene {
     private playerBase!: Phaser.GameObjects.Image;
@@ -34,7 +44,11 @@ export class CombatScene extends Phaser.Scene {
     private seekerShots = new Set<Phaser.GameObjects.Container>();
     private combo = 0;
     private comboExpiresAt = 0;
-    private weaponButtons = new Map<WeaponType, Phaser.GameObjects.Rectangle>();
+    private weaponButtons = new Map<WeaponType, WeaponWheelVisual>();
+    private weaponWheelBounds?: Phaser.Geom.Rectangle;
+    private weaponWheelCenter?: Phaser.GameObjects.Arc;
+    private weaponWheelTitle?: Phaser.GameObjects.Text;
+    private weaponWheelCenterPoint?: { x: number; y: number; radius: number };
     private reloadText!: Phaser.GameObjects.Text;
     private scenario!: CombatScenario;
     private strikeIntegrity = 100;
@@ -84,8 +98,8 @@ export class CombatScene extends Phaser.Scene {
         this.explosionSoundsThisBurst = 0;
         this.paused = false;
         this.pauseMenu = undefined;
-        this.waveDirector = new WaveDirector(Math.max(1, currentRun.currentFY - 2025));
-        this.scenario = scenarioForFiscalYear(currentRun.currentFY);
+        this.waveDirector = new WaveDirector(Math.max(1, currentRun.currentFY - 2025), () => currentRun.nextRandom());
+        this.scenario = scenarioForFiscalYear(currentRun.currentFY, currentRun.campaignSeed);
 
         // Background
         this.add.image(width / 2, height / 2, this.scenario.backgroundKey ?? 'combat_bg').setDisplaySize(width, height);
@@ -140,8 +154,8 @@ export class CombatScene extends Phaser.Scene {
 
         // HUD
         this.setupHUD(width, height);
-        this.add.text(width / 2, 122, this.scenario.location, { fontSize: '22px', color: '#a7dfff', fontStyle: 'bold' }).setOrigin(0.5);
-        this.timeText = this.add.text(width / 2, 80, 'FY END: 60s', { fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.add.text(width / 2, 122, this.scenario.location, { fontSize: '20px', color: '#9dd9e8', fontStyle: 'bold', letterSpacing: 1 }).setOrigin(0.5).setDepth(4);
+        this.timeText = this.add.text(width / 2, 72, 'FY END: 60s', { fontSize: '42px', color: '#ffffff', fontStyle: 'bold', stroke: '#031019', strokeThickness: 5 }).setOrigin(0.5).setDepth(4);
 
         // Wave Timer
         this.waveTimer = this.time.addEvent({
@@ -164,22 +178,29 @@ export class CombatScene extends Phaser.Scene {
 
         // Weapon switching
         this.setupWeaponButtons(width, height);
+        this.input.keyboard?.on('keydown-Q', () => this.cycleWeapon(-1));
+        this.input.keyboard?.on('keydown-E', () => this.cycleWeapon(1));
+        this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _objects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+            if (deltaY !== 0) this.cycleWeapon(deltaY > 0 ? 1 : -1);
+        });
 
-        this.add.rectangle(width - 155, 190, 260, 74, 0x123f55, 0.95)
-            .setStrokeStyle(3, 0x5de6ff)
+        this.add.rectangle(width - 155, 190, 250, 68, 0x0b2635, 0.96)
+            .setStrokeStyle(2, 0x5de6ff)
+            .setDepth(5)
             .setInteractive({ useHandCursor: true })
-            .on('pointerdown', () => this.finishWave());
-        this.add.text(width - 155, 190, 'END YEAR\nLOGISTICS', {
-            fontSize: '22px', color: '#dffbff', fontStyle: 'bold', align: 'center'
-        }).setOrigin(0.5);
+            .on('pointerdown', () => this.finishWave(true));
+        this.add.text(width - 155, 190, 'EARLY EXIT\n−20 GRADE • NO BONUS', {
+            fontSize: '15px', color: '#ffd166', fontStyle: 'bold', align: 'center', letterSpacing: 1
+        }).setOrigin(0.5).setDepth(6);
 
-        this.add.rectangle(90, 190, 120, 74, 0x2a3a4a, 0.95)
-            .setStrokeStyle(3, 0xffd166)
+        this.add.rectangle(90, 190, 126, 68, 0x182633, 0.96)
+            .setStrokeStyle(2, 0xffd166)
+            .setDepth(5)
             .setInteractive({ useHandCursor: true })
             .on('pointerdown', () => this.togglePause());
         this.add.text(90, 190, 'PAUSE', {
-            fontSize: '26px', color: '#ffffff', fontStyle: 'bold'
-        }).setOrigin(0.5);
+            fontSize: '20px', color: '#ffffff', fontStyle: 'bold', letterSpacing: 1
+        }).setOrigin(0.5).setDepth(6);
 
         this.input.keyboard?.on('keydown-ESC', () => this.togglePause());
 
@@ -233,9 +254,10 @@ export class CombatScene extends Phaser.Scene {
         if (this.waveTimer) this.waveTimer.paused = false;
     }
 
-    private finishWave() {
+    private finishWave(earlyExit = false) {
         if (this.isFinishingWave) return;
         this.isFinishingWave = true;
+        if (earlyExit) this.combatSystem.recordEarlyExit();
         this.sound.stopAll();
         if (this.spawnTimer) this.spawnTimer.remove();
         if (this.waveTimer) this.waveTimer.remove();
@@ -243,10 +265,11 @@ export class CombatScene extends Phaser.Scene {
         
         const { width, height } = this.scale;
         const stats = this.combatSystem.getStats();
-        const grade = this.combatSystem.getGrade();
+        const breakdown = this.combatSystem.getGradeBreakdown();
+        const grade = breakdown.grade;
         const profitMargin = currentRun.activeDoctrine?.effect.profitMargin || 1.0;
         const combatProfit = (stats.taxpayerBurn * 0.15) * profitMargin;
-        const gradeBonus = grade === 'S' ? 40_000_000 : grade === 'A' ? 20_000_000 : grade === 'B' ? 8_000_000 : 0;
+        const gradeBonus = stats.endedEarly ? 0 : grade === 'S' ? 40_000_000 : grade === 'A' ? 20_000_000 : grade === 'B' ? 8_000_000 : 0;
         
         // Finalize stats to global run
         currentRun.taxpayerBurn += stats.taxpayerBurn;
@@ -272,12 +295,13 @@ export class CombatScene extends Phaser.Scene {
             `PROFIT: ${this.formatCurrency(combatProfit + stats.restraintBonus + gradeBonus)}`,
             `THREATS DOWN: ${stats.threatsDestroyed}  •  ALLIES SPARED: ${stats.friendliesSpared}`,
             stats.friendliesHit > 0 ? `FRIENDLY FIRE INCIDENTS: ${stats.friendliesHit}` : 'NO FRIENDLY FIRE — CONGRESS APPLAUDS',
-            `BEST CHAIN: x${stats.comboPeak}`
+            `BEST CHAIN: x${stats.comboPeak}`,
+            ...breakdown.reasons
         ].join('\n'), {
-            fontSize: '36px',
+            fontSize: '24px',
             color: '#ffffff',
             align: 'center',
-            lineSpacing: 12
+            lineSpacing: 5
         }).setOrigin(0.5).setDepth(1001);
 
         this.time.delayedCall(3800, () => {
@@ -289,7 +313,7 @@ export class CombatScene extends Phaser.Scene {
     private scheduleNextSpawn() {
         const baseSpawn = this.waveDirector.getNextSpawn(this.time.now);
         const freqMultiplier = currentRun.activeDoctrine?.effect.threatFrequency || 1.0;
-        const adjustedDelay = baseSpawn.delay / (freqMultiplier * this.scenario.spawnRate);
+        const adjustedDelay = Math.max(900, baseSpawn.delay / (freqMultiplier * this.scenario.spawnRate));
 
         this.spawnTimer = this.time.delayedCall(adjustedDelay, () => {
             this.spawnThreat(baseSpawn.type);
@@ -315,8 +339,8 @@ export class CombatScene extends Phaser.Scene {
 
     private spawnThreat(type: ThreatType) {
         // Allied contacts stay allied — scenario bias only remixes hostiles.
-        if (type !== ThreatType.FRIENDLY && Math.random() < 0.35) {
-            type = Phaser.Math.RND.pick(this.scenario.threatBias);
+        if (type !== ThreatType.FRIENDLY && this.randomFloat() < 0.35) {
+            type = this.randomPick(this.scenario.threatBias);
         }
         const config = THREAT_CONFIGS[type];
         if (type === ThreatType.SWARM) {
@@ -327,7 +351,7 @@ export class CombatScene extends Phaser.Scene {
     }
 
     private createThreat(config: ThreatConfig, x?: number, y?: number) {
-        const posX = x ?? Phaser.Math.Between(100, this.scale.width - 100);
+        const posX = x ?? this.randomBetween(100, this.scale.width - 100);
         const posY = y ?? -50;
         
         const isMystery = config.type === ThreatType.MYSTERY;
@@ -348,11 +372,12 @@ export class CombatScene extends Phaser.Scene {
         container.add(sprite);
 
         if (isFriendly) {
-            const ring = this.add.circle(0, 0, config.radius * 2.4, 0x44ff88, 0.14)
-                .setStrokeStyle(4, 0x44ff88, 0.95);
+            const ring = this.add.circle(0, 0, config.radius * 2.65, 0x44ff88, 0.18)
+                .setStrokeStyle(5, 0x44ff88, 1);
             container.add(ring);
-            container.add(this.add.text(0, -config.radius * 2.8, 'ALLIED', {
-                fontSize: '20px', color: '#44ff88', fontStyle: 'bold', stroke: '#001a0c', strokeThickness: 4
+            container.add(this.add.rectangle(0, -config.radius * 2.85, 146, 30, 0x002b17, 0.96).setStrokeStyle(2, 0x8affae));
+            container.add(this.add.text(0, -config.radius * 2.85, 'ALLY • DO NOT FIRE', {
+                fontSize: '14px', color: '#baffcc', fontStyle: 'bold', stroke: '#001a0c', strokeThickness: 3
             }).setOrigin(0.5));
             this.tweens.add({
                 targets: ring, scaleX: 1.25, scaleY: 1.25, alpha: 0.35,
@@ -380,7 +405,7 @@ export class CombatScene extends Phaser.Scene {
         if (weaving) {
             container.setData('motion', {
                 originX: posX,
-                phase: Phaser.Math.FloatBetween(0, Math.PI * 2),
+                phase: this.randomFloat() * Math.PI * 2,
                 amplitude: config.type === ThreatType.SCOOTER ? 90 : isFriendly ? 55 : 45,
                 frequency: config.type === ThreatType.SCOOTER ? 0.004 : 0.0025
             });
@@ -419,7 +444,7 @@ export class CombatScene extends Phaser.Scene {
             case ThreatType.SWARM:
                 return { sheet: SHEETS.threatScout.key, texture: SHEETS.threatScout.key, anim: 'anim_threat_scout' };
             case ThreatType.DECOY:
-                return { texture: 'threat_pack_balloon' };
+                return { texture: 'threat_balloon_cluster' };
             case ThreatType.MYSTERY:
                 return { texture: 'threat_pack_mystery' };
             case ThreatType.MISSILE:
@@ -429,72 +454,91 @@ export class CombatScene extends Phaser.Scene {
         }
     }
 
+    private randomFloat() {
+        return currentRun.nextRandom();
+    }
+
+    private randomBetween(min: number, max: number) {
+        return Math.floor(min + this.randomFloat() * (max - min + 1));
+    }
+
+    private randomPick<T>(values: T[]): T {
+        return values[Math.min(values.length - 1, Math.floor(this.randomFloat() * values.length))];
+    }
+
     private setupHUD(width: number, _height: number) {
-        const style = { fontSize: '42px', color: '#ffffff', fontStyle: 'bold' };
-        
+        const panel = this.add.graphics().setDepth(2);
+        panel.fillStyle(0x06131f, 0.82);
+        panel.fillRoundedRect(22, 24, width - 44, 146, 20);
+        panel.lineStyle(2, 0x3b8095, 0.7);
+        panel.strokeRoundedRect(22, 24, width - 44, 146, 20);
+        panel.lineStyle(2, 0x5de6ff, 0.8);
+        panel.lineBetween(40, 155, width - 40, 155);
+
+        const style = { fontSize: '24px', color: '#e6f4fa', fontStyle: 'bold', stroke: '#031019', strokeThickness: 3 };
         this.hudTexts = {
-            burn: this.add.text(40, 40, 'TAXPAYER BURN: $0', style),
-            mansions: this.add.text(40, 100, `MANSIONS: ${currentRun.mansionsBuilt}`, style),
-            readiness: this.add.text(width - 40, 40, `READINESS: ${currentRun.globalReadiness}%`, style).setOrigin(1, 0),
-            weapon: this.add.text(width / 2, 160, `WEAPON: ${this.currentWeapon}`, style).setOrigin(0.5, 0),
-            pressure: this.add.text(width - 40, 100, 'PRESSURE: 0', style).setOrigin(1, 0),
-            ammo: this.add.text(width / 2, 220, 'AMMO: UNLIMITED', style).setOrigin(0.5, 0),
-            combo: this.add.text(width / 2, 285, 'CHAIN READY', { ...style, color: '#ffd166' }).setOrigin(0.5, 0)
+            burn: this.add.text(42, 42, 'TAXPAYER BURN: $0', style),
+            mansions: this.add.text(42, 84, `MANSIONS: ${currentRun.mansionsBuilt}`, style),
+            readiness: this.add.text(width - 42, 42, `READINESS: ${currentRun.globalReadiness}%`, style).setOrigin(1, 0),
+            weapon: this.add.text(width / 2, 172, `WEAPON: ${this.currentWeapon}`, style).setOrigin(0.5, 0),
+            pressure: this.add.text(width - 42, 84, 'PRESSURE: 0', style).setOrigin(1, 0),
+            ammo: this.add.text(width / 2, 216, 'AMMO: UNLIMITED', style).setOrigin(0.5, 0),
+            combo: this.add.text(width / 2, 258, 'CHAIN READY', { ...style, color: '#ffd166' }).setOrigin(0.5, 0)
         };
-        this.reloadText = this.add.text(width / 2, 345, 'SYSTEM READY', { fontSize: '22px', color: '#9dff8e', fontStyle: 'bold' }).setOrigin(0.5);
-        this.restraintText = this.add.text(width / 2, 385, 'RESTRAINT: 0 ALLIES SPARED', {
-            fontSize: '22px', color: '#44ff88', fontStyle: 'bold'
+        this.reloadText = this.add.text(width / 2, 306, 'SYSTEM READY', { fontSize: '20px', color: '#9dff8e', fontStyle: 'bold' }).setOrigin(0.5);
+        this.restraintText = this.add.text(width / 2, 338, 'RESTRAINT: 0 ALLIES SPARED', {
+            fontSize: '18px', color: '#76f2a7', fontStyle: 'bold'
         }).setOrigin(0.5);
+        Object.values(this.hudTexts).forEach((text) => text.setDepth(3));
+        this.reloadText.setDepth(3);
+        this.restraintText.setDepth(3);
     }
 
     private setupWeaponButtons(width: number, height: number) {
         const weapons = currentRun.availableWeapons();
-        // Keep every unlocked weapon visible. Paging behind a MORE button adds
-        // a second tap at the exact moment combat needs a fast switch.
-        const visible = Math.max(1, weapons.length);
-        const buttonWidth = width / visible;
-
-        this.add.image(width / 2, height - 52, SHEETS.uiChrome.key, 3)
-            .setDisplaySize(width - 20, 118)
-            .setAlpha(0.9)
-            .setDepth(8);
-
-        const tray = this.add.container(0, 0).setDepth(9);
-        const rebuild = () => {
-            tray.removeAll(true);
-            this.weaponButtons.clear();
-            const page = weapons;
-            page.forEach((type, i) => {
-                const x = i * buttonWidth + buttonWidth / 2;
-                const y = height - 50;
-                const config = WEAPON_CONFIGS[type];
-                const button = this.add.rectangle(x, y, buttonWidth - 10, 98, 0x333333, 0.55)
-                    .setStrokeStyle(3, 0x5c6770)
-                    .setInteractive({ useHandCursor: true })
-                    .on('pointerdown', () => this.setWeapon(type));
-                this.weaponButtons.set(type, button);
-                const icon = this.add.image(x, y - 18, SHEETS.weaponIcons.key, config.iconFrame)
-                    .setDisplaySize(54, 54);
-                const label = this.add.text(x, y + 22, config.shortLabel, {
-                    fontSize: '20px', color: '#ffffff', fontStyle: 'bold'
-                }).setOrigin(0.5);
-                const cost = this.add.text(x, y + 42, this.weaponCostLabel(type), {
-                    fontSize: '15px', color: '#b9d5e6'
-                }).setOrigin(0.5);
-                tray.add([button, icon, label, cost]);
-            });
-            this.updateWeaponSelectionFeedback();
-        };
-
         if (!weapons.includes(this.currentWeapon) && weapons[0]) {
             this.currentWeapon = weapons[0];
         }
-        rebuild();
+        const radius = Math.min(112, Math.max(78, width * 0.13));
+        const centerX = Math.max(radius + 64, width * 0.16);
+        const centerY = height - 270;
+        this.weaponWheelCenterPoint = { x: centerX, y: centerY, radius };
+        this.weaponWheelBounds = new Phaser.Geom.Rectangle(centerX - radius - 58, centerY - radius - 58, (radius + 58) * 2, (radius + 58) * 2);
+
+        this.add.circle(centerX, centerY, radius + 55, 0x04101a, 0.88).setDepth(8).setStrokeStyle(3, 0x24536e, 0.9);
+        this.weaponWheelCenter = this.add.circle(centerX, centerY, 59, 0x0b3042, 1).setDepth(10).setStrokeStyle(4, 0x7df4ff);
+        this.weaponWheelTitle = this.add.text(centerX, centerY - 12, 'ARMORY', {
+            fontSize: '17px', color: '#dff7ff', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(11);
+        this.add.text(centerX, centerY + 13, 'Q / E  •  SCROLL', {
+            fontSize: '12px', color: '#8eb6ca', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(11);
+
+        weaponWheelSlots(weapons, this.currentWeapon, centerX, centerY, radius).forEach(({ type, x, y }) => {
+            const config = WEAPON_CONFIGS[type];
+            const button = this.add.circle(x, y, 43, 0x333333, 0.96)
+                .setDepth(10)
+                .setStrokeStyle(3, 0x5c6770)
+                .setInteractive({ useHandCursor: true })
+                .on('pointerdown', () => this.setWeapon(type));
+            const ring = this.add.circle(x, y, 49, 0x000000, 0).setDepth(9).setStrokeStyle(0, 0x000000, 0);
+            const icon = this.add.image(x, y - 9, SHEETS.weaponIcons.key, config.iconFrame).setDisplaySize(39, 39).setDepth(11);
+            const label = this.add.text(x, y + 25, config.shortLabel, {
+                fontSize: '13px', color: '#ffffff', fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(11);
+            const ammo = this.add.text(x, y + 41, this.weaponWheelAmmoLabel(type), {
+                fontSize: '11px', color: '#b9d5e6'
+            }).setOrigin(0.5).setDepth(11);
+            this.weaponButtons.set(type, { button, ring, icon, label, ammo });
+        });
+        this.updateWeaponSelectionFeedback();
     }
 
     private setWeapon(type: WeaponType) {
+        if (type === this.currentWeapon) return;
         this.currentWeapon = type;
         this.hudTexts.weapon.setText(`WEAPON: ${this.currentWeapon}`);
+        this.spinWeaponWheel();
         this.updateWeaponSelectionFeedback();
         this.updateHUD();
     }
@@ -504,14 +548,52 @@ export class CombatScene extends Phaser.Scene {
         return cost >= 1_000_000 ? `$${(cost / 1_000_000).toFixed(1)}M` : `$${(cost / 1_000).toFixed(1)}K`;
     }
 
+    private weaponWheelAmmoLabel(type: WeaponType) {
+        const doctrineUnlimited = currentRun.activeDoctrine?.effect.ammoCapacity !== undefined;
+        const ammo = weaponAmmoLabel(type, currentRun.theaters.active.inventory[type] ?? 0, doctrineUnlimited);
+        return `${this.weaponCostLabel(type)} • ${ammo}`;
+    }
+
+    private cycleWeapon(direction: 1 | -1) {
+        if (this.paused || this.isFinishingWave) return;
+        const next = adjacentWeapon(currentRun.availableWeapons(), this.currentWeapon, direction);
+        if (next) this.setWeapon(next);
+    }
+
+    private spinWeaponWheel() {
+        const center = this.weaponWheelCenterPoint;
+        if (!center) return;
+        weaponWheelSlots(currentRun.availableWeapons(), this.currentWeapon, center.x, center.y, center.radius).forEach(({ type, x, y }) => {
+            const visual = this.weaponButtons.get(type);
+            if (!visual) return;
+            this.tweens.killTweensOf([visual.button, visual.ring, visual.icon, visual.label, visual.ammo]);
+            this.tweens.add({
+                targets: [visual.button, visual.ring], x, y, duration: 150, ease: 'Cubic.Out'
+            });
+            this.tweens.add({
+                targets: visual.icon, x, y: y - 9, duration: 150, ease: 'Cubic.Out'
+            });
+            this.tweens.add({
+                targets: visual.label, x, y: y + 25, duration: 150, ease: 'Cubic.Out'
+            });
+            this.tweens.add({
+                targets: visual.ammo, x, y: y + 41, duration: 150, ease: 'Cubic.Out'
+            });
+        });
+    }
+
     private updateWeaponSelectionFeedback() {
         const config = WEAPON_CONFIGS[this.currentWeapon];
-        this.weaponButtons.forEach((button, type) => {
+        this.weaponButtons.forEach((visual, type) => {
             const selected = type === this.currentWeapon;
-            button.setFillStyle(selected ? 0x126a87 : 0x333333, selected ? 0.98 : 0.9);
-            button.setStrokeStyle(selected ? 5 : 3, selected ? 0x7df4ff : 0x5c6770);
-            button.setScale(selected ? 1.035 : 1);
+            visual.button.setFillStyle(selected ? 0x126a87 : 0x333333, selected ? 1 : 0.96);
+            visual.button.setStrokeStyle(selected ? 5 : 3, selected ? 0x7df4ff : 0x5c6770);
+            visual.ring.setStrokeStyle(selected ? 3 : 0, selected ? config.color : 0x000000, selected ? 0.85 : 0);
+            visual.label.setColor(selected ? '#7df4ff' : '#ffffff');
+            visual.ammo.setText(this.weaponWheelAmmoLabel(type));
         });
+        this.weaponWheelCenter?.setStrokeStyle(4, config.color);
+        this.weaponWheelTitle?.setText(config.shortLabel);
         this.showCombatCallout(config);
     }
 
@@ -520,10 +602,9 @@ export class CombatScene extends Phaser.Scene {
         const card = this.add.container(0, height - 435).setDepth(50);
         const panel = this.add.rectangle(width / 2, 0, width - 90, 128, 0x06111d, 0.94).setStrokeStyle(3, 0xf3ca67);
         const portrait = this.add.image(104, 58, CHARACTERS.peter.portraitKey).setDisplaySize(106, 158).setOrigin(0.5, 1);
-        const ammo = WEAPON_CONFIGS[this.currentWeapon].limitedAmmo
-            ? currentRun.theaters.active.inventory[this.currentWeapon] ?? 0
-            : 'UNLIMITED';
-        const detail = this.add.text(178, -43, `${config.name}  •  ${this.weaponCostLabel(this.currentWeapon)} / SHOT  •  AMMO: ${ammo}`, {
+        const doctrineUnlimited = currentRun.activeDoctrine?.effect.ammoCapacity !== undefined;
+        const ammo = weaponAmmoLabel(this.currentWeapon, currentRun.theaters.active.inventory[this.currentWeapon] ?? 0, doctrineUnlimited);
+        const detail = this.add.text(178, -43, `${config.name} • ${this.weaponCostLabel(this.currentWeapon)} / SHOT • RANGE: ${weaponRangeLabel(this.currentWeapon)} • AMMO: ${ammo}`, {
             fontSize: '19px', color: '#dff7ff', fontStyle: 'bold'
         });
         const line = this.add.text(178, -5, `PETER KEGSBREATH: “${characterLine('peter', 'combat')}”`, {
@@ -541,10 +622,15 @@ export class CombatScene extends Phaser.Scene {
         if (this.paused) return;
         if (pointer.y < 240 && pointer.x > this.scale.width - 310) return;
         if (pointer.y < 240 && pointer.x < 160) return;
-        if (pointer.y > this.scale.height - 120) return;
+        if (this.weaponWheelBounds?.contains(pointer.x, pointer.y)) return;
 
         const now = this.time.now;
         const config = WEAPON_CONFIGS[this.currentWeapon];
+
+        if (!isTargetInWeaponRange(this.currentWeapon, this.playerBase.x, this.playerBase.y, pointer.x, pointer.y)) {
+            this.reloadText.setText(`OUT OF RANGE • ${weaponRangeLabel(this.currentWeapon)}`).setColor('#ff9a76');
+            return;
+        }
 
         if (now - this.lastFired < config.reloadTime) return;
 
@@ -940,6 +1026,7 @@ export class CombatScene extends Phaser.Scene {
     }
 
     private destroyThreat(threat: any, weapon: WeaponType) {
+        if (!threat.active) return;
         const now = this.time.now;
         if (now - this.lastExplosionSoundAt > 80) {
             audioManager.play('threat_explode');
@@ -957,6 +1044,7 @@ export class CombatScene extends Phaser.Scene {
         }
 
         const ratio = this.combatSystem.recordThreatDestroyed(threatConfig.type, weapon);
+        currentRun.combatMetrics.threatsDefeated++;
 
         this.combo = this.time.now <= this.comboExpiresAt ? this.combo + 1 : 1;
         this.comboExpiresAt = this.time.now + 2200;
@@ -981,6 +1069,7 @@ export class CombatScene extends Phaser.Scene {
 
     private handleFriendlyFire(threat: Phaser.GameObjects.Container, weapon: WeaponType) {
         this.combatSystem.recordThreatDestroyed(ThreatType.FRIENDLY, weapon);
+        currentRun.combatMetrics.alliedContactsHit++;
         this.combo = 0;
         this.comboExpiresAt = 0;
 
@@ -999,6 +1088,7 @@ export class CombatScene extends Phaser.Scene {
 
     private spareFriendly(threat: Phaser.GameObjects.Container) {
         this.combatSystem.recordFriendlySpared();
+        currentRun.combatMetrics.alliedContactsSpared++;
         const activeTheater = currentRun.theaters.active;
         activeTheater.readiness = Math.min(100, activeTheater.readiness + 3);
         currentRun.updateGlobalReadiness();
@@ -1136,10 +1226,10 @@ export class CombatScene extends Phaser.Scene {
     }
 
     private spawnSwarm(config: ThreatConfig) {
-        const centerX = Phaser.Math.Between(100, this.scale.width - 100);
+        const centerX = this.randomBetween(100, this.scale.width - 100);
         for (let i = 0; i < 5; i++) {
-            const x = centerX + Phaser.Math.Between(-50, 50);
-            const y = -50 - Phaser.Math.Between(0, 100);
+            const x = centerX + this.randomBetween(-50, 50);
+            const y = -50 - this.randomBetween(0, 100);
             this.createThreat(config, x, y);
         }
     }
@@ -1186,16 +1276,16 @@ export class CombatScene extends Phaser.Scene {
         if (WEAPON_CONFIGS[this.currentWeapon].limitedAmmo) {
             const doctrineAmmo = currentRun.activeDoctrine?.effect.ammoCapacity;
             if (doctrineAmmo !== undefined) {
-                this.hudTexts.ammo.setText('AMMO: UNLIMITED (DOCTRINE)');
+                this.hudTexts.ammo.setText(`AMMO: ${weaponAmmoLabel(this.currentWeapon, 0, true)}`);
                 this.hudTexts.ammo.setColor('#00ffff');
             } else {
                 const ammo = currentRun.theaters['active'].inventory[this.currentWeapon] || 0;
-                this.hudTexts.ammo.setText(`AMMO: ${ammo}`);
+                this.hudTexts.ammo.setText(`AMMO: ${weaponAmmoLabel(this.currentWeapon, ammo, false)}`);
                 if (ammo <= 5) this.hudTexts.ammo.setColor('#ffaa00');
                 else this.hudTexts.ammo.setColor('#ffffff');
             }
         } else {
-            this.hudTexts.ammo.setText('AMMO: UNLIMITED');
+            this.hudTexts.ammo.setText(`AMMO: ${weaponAmmoLabel(this.currentWeapon, 0, false)}`);
             this.hudTexts.ammo.setColor('#ffffff');
         }
     }

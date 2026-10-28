@@ -39,6 +39,12 @@ export interface WeaponConfig {
     shortLabel: string;
 }
 
+/** Range is measured in game-space pixels from the launch base to the aim point. */
+export function isTargetInWeaponRange(type: WeaponType, originX: number, originY: number, targetX: number, targetY: number): boolean {
+    const range = WEAPON_CONFIGS[type].range;
+    return Math.hypot(targetX - originX, targetY - originY) <= range;
+}
+
 export interface ThreatConfig {
     type: ThreatType;
     value: number;
@@ -69,7 +75,7 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
         range: 600,
         reloadTime: 2800,
         color: 0x00ffff,
-        radius: 350,
+        radius: 230,
         description: "Non-kinetic disruption. High contractor markup for 'software updates'.",
         behavior: 'jammer',
         iconFrame: 1,

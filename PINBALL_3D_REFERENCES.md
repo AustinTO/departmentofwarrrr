@@ -1,6 +1,6 @@
 # Pinball 3D reference findings
 
-Inspected 2026-09-11: repository pages/readmes and linked official architecture/API documentation. These are architectural observations, not runtime benchmarks or exhaustive source audits. No external code, models or textures were copied. The original Godot direction has been superseded by Three.js + Rapier for the procurement migration on this branch.
+References inspected 2026-09-11. Status update 2026-10-28: implementation now uses Three.js 0.186.0 and Rapier 0.20.0, with a shared board layout feeding view and physics. These remain architectural observations, not runtime benchmarks or exhaustive source audits. No external code, models or textures were copied. Device performance and comparative playability are still unevaluated.
 
 | Reference | Observation and adaptation | Boundary |
 | --- | --- | --- |
@@ -23,4 +23,4 @@ Inspected 2026-09-11: repository pages/readmes and linked official architecture/
 
 [Rapier getting started](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) documents asynchronous WASM initialization. Prove Vite production and Capacitor offline loading before table work. [Rigid bodies](https://rapier.rs/docs/user_guides/javascript/rigid_bodies/) documents dynamic and kinematic behavior; use that distinction for the flipper bake-off. [Colliders](https://rapier.rs/docs/user_guides/javascript/colliders/) provides primitive/mesh shapes, sensors and interaction groups. Keep shape complexity low and validate event/group behavior in tests.
 
-Exact package versions remain to be selected and pinned at implementation. This research does not establish performance, flipper quality, or release readiness.
+The lockfile currently resolves Three.js 0.186.0 and Rapier 0.20.0. This research does not establish physical-device performance, comparative flipper quality, or release readiness; see [evaluation](PINBALL_3D_EVALUATION.md) for current evidence and pending gates.

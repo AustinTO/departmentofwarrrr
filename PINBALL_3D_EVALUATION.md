@@ -1,8 +1,8 @@
 # Procurement 3D evaluation
 
-Status: **implemented; verification in progress, not a completed comparative study** (2026-09-12). The branch now uses Three.js 0.186.0 and Rapier 0.20.0. The original protocol below remains the longer-term evaluation target.
+Status (2026-10-28): automated verification passes; this is **not a completed comparative study or release sign-off**. The branch uses Three.js 0.186.0 and Rapier 0.20.0. Latest verification: 129 tests across 16 files pass; `npm run build` passes with a large-chunk warning. The suite includes 33 focused geometry tests, including shared `BoardLayout` use and checks that distinct upper layouts preserve protected common geometry. Settlement/delivery behavior has regression coverage. Physics/view switching is implemented, but is not covered by those tests. The latest headless browser smoke attempt stalled before completing gameplay verification. Physical-device performance, hands-on fun/readability, independent authoring and outstanding manual lifecycle gates remain pending.
 
-Current evidence: 14 actual Rapier tests cover the deck, seven launch strengths clearing the shooter exit, both flippers, wall containment, an elevated ramp completion and drain lifecycle. The full suite passed 94 tests before the latest obstacle additions. A headless Chrome playthrough earned contract value and advanced committee votes; a separate touch gesture successfully pulled and released the plunger. Captures confirmed a table-dominant 430×932 layout with invisible flipper zones, original-inspired green/star/chrome/cyan art, and a complete raised title plaque. No physical-phone performance or five-player fun study has been completed. Software-rendered Chrome frame rates are not mobile-hardware evidence.
+Current evidence: automated suite and production build pass as stated above. An earlier-revision desktop/headless Chrome playthrough earned contract value and advanced committee votes, and a separate touch gesture pulled and released the plunger. These are historical smoke observations, not confirmation of the latest revision; the latest headless smoke attempt stalled. The bundle emits a large-chunk warning. No physical-phone benchmark or five-player fun study has been completed.
 
 The latest visual pass adds an Urgent Need bumper, Audit/Classified/Black Budget targets and rubber posts. End-of-pass verification is recorded in the task handoff; do not infer that the original evaluation matrix is fully passed.
 
@@ -22,7 +22,7 @@ Capture Planck and 3D revisions, uncommitted changes, recipe, package versions, 
 | Mobile performance | Fresh device profile pending | Sustained 60 FPS target: median frame interval ≤16.9 ms, p95 ≤20 ms, p99 ≤33.4 ms; physics p95 ≤4 ms per rendered frame at selected tick rate |
 | Code complexity | Scene, physics, kit and rules already separated partly | Record handwritten LOC/files, cross-layer imports, dependency bytes, generated geometry size and tuning parameters; zero mechanics imports of campaign/Phaser |
 | Development speed | Baseline edit exercise pending | Compare time to first successful rail/ramp edit and time to diagnose a seeded seam failure; report failures and assistance, not only successful trials |
-| Maintainability | Regression suites already present | Tests validate specs, lifecycle, event idempotency and authoring edits; another agent can reproduce a failure from saved fixture and docs |
+| Maintainability | 129 tests pass across 16 files, including 33 focused geometry tests | Add/prove lifecycle and authoring-edit coverage; another agent can reproduce a failure from saved fixture and docs |
 
 These are proposed acceptance thresholds. If a device cannot meet them, report a failed gate; do not silently redefine stable 60 FPS. Name the available representative mid-range Android device (OnePlus 6T is referenced by the earlier roadmap, availability unverified). Include mobile Safari if iOS/browser support will be claimed; Android results do not establish iOS support.
 
@@ -41,12 +41,12 @@ These are proposed acceptance thresholds. If a device cannot meet them, report a
 | Experiment | Revision/device/config | Evidence artifact | Result |
 | --- | --- | --- | --- |
 | Existing Planck baseline | Pending | Pending | Not run in this documentation task |
-| Rail/ramp geometry and feeds | Pending | Pending | Not implemented |
-| Physical versus kinematic flipper | Pending | Pending | Not implemented |
+| Rail/ramp geometry and feeds | Current automated suite | Pending | Core geometry/play tests implemented; full 100-feed comparative protocol pending |
+| Physical versus kinematic flipper | Current implementation uses kinematic flippers | Pending | Comparative physical-motor bake-off and player feel study pending |
 | Mobile CPU/GPU/input | Pending | Pending | Not measured |
 | Independent authoring exercise | Pending | Pending | Not run |
 | Art and fun comparison | Pending | Pending | Not run |
-| Host lifecycle / campaign adapter | Pending | Pending | Not implemented |
+| Host lifecycle / campaign settlement | Automated tests/build | Pending | Settlement/delivery fixes covered by current suite; physical WebView lifecycle/manual campaign-flow checks pending |
 
 Store future traces/screenshots under an explicitly named evidence location and link each result here. Include failures, test counts and package/configuration changes. No invented scores or placeholder PASS labels.
 

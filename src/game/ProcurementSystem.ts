@@ -2,6 +2,7 @@ import { WeaponType } from './config';
 import { currentRun } from '../state/RunState';
 import type { DeliveryBatch } from '../state/RunState';
 import type { ProcurementBumper } from './ProcurementTableDefinition';
+import type { PinballBoardId } from './PinballBoards';
 
 export interface ContractState {
     items: Partial<Record<WeaponType, number>>;
@@ -15,6 +16,19 @@ export interface ContractState {
 
 /** Pure contract arithmetic for the procurement table. */
 export class ProcurementSystem {
+    private settled = false;
+    private emergencyGrantUsed = false;
+    constructor(public board: PinballBoardId = currentRun.selectedBoard) {}
+    setBoard(board: PinballBoardId) { this.board = board; }
+    claimEmergencyMultiball(): boolean {
+        if (!this.state.multiballTriggered || this.emergencyGrantUsed) {
+            this.state.multiballTriggered = false;
+            return false;
+        }
+        this.emergencyGrantUsed = true;
+        this.state.multiballTriggered = false;
+        return true;
+    }
     readonly state: ContractState = {
         items: {},
         value: 0,
@@ -26,6 +40,8 @@ export class ProcurementSystem {
     };
 
     reset() {
+        this.settled = false;
+        this.emergencyGrantUsed = false;
         this.state.items = {};
         this.state.value = 0;
         this.state.leadTimeDelay = 0;
@@ -36,7 +52,9 @@ export class ProcurementSystem {
     }
 
     comboMultiplier(): number {
-        return Math.min(4, 1 + Math.floor(this.state.combo / 3));
+        const step = this.board === 'audit_chamber' ? 2 : this.board === 'supplemental_stadium' ? 4 : 3;
+        const ceiling = this.board === 'audit_chamber' ? 3 : this.board === 'supplemental_stadium' ? 5 : 4;
+        return Math.min(ceiling, 1 + Math.floor(this.state.combo / step));
     }
 
     applyBumper(bumper: ProcurementBumper, nowCombo = true): { scaledValue: number; multiplier: number; status: string } {
@@ -46,7 +64,6 @@ export class ProcurementSystem {
         }
         const multiplier = bumper.value > 0 ? this.comboMultiplier() : 1;
         const costMult = currentRun.activeDoctrine?.effect.costMultiplier ?? 1;
-        const profitMult = currentRun.activeDoctrine?.effect.profitMargin ?? 1;
         const scaledValue = bumper.value * multiplier * costMult;
 
         if (bumper.quantity > 0) {
@@ -54,12 +71,9 @@ export class ProcurementSystem {
         }
         this.state.leadTimeDelay = Math.max(0, this.state.leadTimeDelay + bumper.delay);
         this.state.value = Math.max(0, this.state.value + scaledValue);
-        currentRun.taxpayerBurn = Math.max(0, currentRun.taxpayerBurn + scaledValue);
-        currentRun.contractorProfit = Math.max(0, currentRun.contractorProfit + scaledValue * 0.15 * profitMult);
-
-        if (bumper.id === 'emergency-supplemental') {
-            this.state.multiballTriggered = true;
-        }
+        if (bumper.id.startsWith('emergency')) this.state.multiballTriggered = true;
+        // Bumper hits only draft the contract. Campaign money and units settle
+        // together, after the player explicitly authorizes it.
 
         this.state.consequence = this.describeConsequence(bumper, scaledValue);
         const status = scaledValue > 0
@@ -95,29 +109,42 @@ export class ProcurementSystem {
         if (bumper.outcome === 'efficiency') {
             return `${bumper.label}: auditors found a number that was accidentally accurate.`;
         }
-        if (bumper.id === 'emergency-supplemental') {
-            return 'Emergency supplemental opens a temporary multiball feeding frenzy.';
-        }
+        if (bumper.id.startsWith('emergency')) return 'Emergency requirement: two extra balls are authorized for the hearing.';
         if (scaledValue >= 50_000_000_000) {
             return `${bumper.label}: capability arrives late, mansions arrive early.`;
         }
         return `${bumper.label}: money now, readiness later.`;
     }
 
-    authorize(): { batches: DeliveryBatch[]; summary: string } {
+    authorize(): { batches: DeliveryBatch[]; summary: string; authorized: boolean } {
+        if (this.settled || currentRun.authorizedProcurementFY === currentRun.currentFY)
+            return { batches: [], summary: 'This fiscal year’s contract was already settled.', authorized: false };
+        this.settled = true;
+        currentRun.authorizedProcurementFY = currentRun.currentFY;
         const productionSpeed = currentRun.activeDoctrine?.effect.productionSpeed ?? 1;
-        const deliveryYear = currentRun.currentFY + Math.max(0, Math.ceil(this.state.leadTimeDelay / productionSpeed));
-        const batches: DeliveryBatch[] = Object.entries(this.state.items).map(([weapon, quantity]) => ({
+        // Deliveries are processed at the year transition, so even a zero-delay
+        // contract first becomes usable in the following FY.
+        const deliveryYear = currentRun.currentFY + Math.max(1, Math.ceil(this.state.leadTimeDelay / productionSpeed));
+        const batches: DeliveryBatch[] = Object.entries(this.state.items).filter(([, quantity]) => (quantity ?? 0) > 0).map(([weapon, quantity]) => ({
             fiscalYear: deliveryYear,
             weaponType: weapon as WeaponType,
-            quantity: quantity!
+            quantity: quantity!,
+            destination: 'active'
         }));
         batches.forEach((batch) => currentRun.productionQueue.push(batch));
+        currentRun.taxpayerBurn = Math.max(0, currentRun.taxpayerBurn + this.state.value);
+        const profitMult = currentRun.activeDoctrine?.effect.profitMargin ?? 1;
+        currentRun.contractorProfit = Math.max(0, currentRun.contractorProfit + this.state.value * 0.15 * profitMult);
         currentRun.save();
         const summary = batches.length === 0
             ? 'Authorized a beautifully empty contract.'
             : `Authorized ${batches.reduce((n, b) => n + b.quantity, 0)} units arriving FY ${deliveryYear}.`;
-        return { batches, summary };
+        return { batches, summary, authorized: true };
+    }
+
+    discard(): { summary: string } {
+        this.reset();
+        return { summary: 'Draft discarded. No funds, profit, or units were recorded.' };
     }
 
     formatBudget(value: number) {

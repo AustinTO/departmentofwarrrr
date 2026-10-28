@@ -11,9 +11,12 @@ export class WaveDirector {
     private intensity: number = 1;
     private lastTime: number | null = null;
     private sinceFriendly = 0;
+    private readonly random: () => number;
 
-    constructor(fy: number = 1) {
-        this.intensity = 1 + (fy - 1) * 0.5;
+    constructor(fy: number = 1, random: () => number = Math.random) {
+        // Keep later years harder without multiplying an already-fast spawn loop.
+        this.intensity = 1 + Math.min(0.5, Math.max(0, fy - 1) * 0.08);
+        this.random = random;
         // First allied contact arrives mid-wave, not immediately.
         this.sinceFriendly = 4;
     }
@@ -24,12 +27,12 @@ export class WaveDirector {
         this.elapsedTime += delta;
         this.sinceFriendly++;
 
-        // Intensity increases over the course of the wave (60-100 seconds)
-        const waveProgress = Math.min(1, this.elapsedTime / 90000);
-        const currentIntensity = this.intensity * (1 + waveProgress);
+        // Combat is capped at 60 seconds; ramp smoothly over that real window.
+        const waveProgress = Math.min(1, this.elapsedTime / 60000);
+        const currentIntensity = this.intensity * (1 + waveProgress * 0.3);
 
         let type: ThreatType;
-        const roll = Math.random();
+        const roll = this.random();
 
         // Allies are rare decision points: ~1 every 14–18 spawns, ~3% random chance.
         if (this.sinceFriendly >= 16 || (this.sinceFriendly >= 10 && roll < 0.03)) {
@@ -51,7 +54,8 @@ export class WaveDirector {
 
         // Delay decreases as intensity increases
         const baseDelay = 2000;
-        const delay = Math.max(400, baseDelay / currentIntensity);
+        // Protect the on-screen threat budget from unbounded FY/scenario multipliers.
+        const delay = Math.max(900, baseDelay / currentIntensity);
 
         return { type, delay };
     }

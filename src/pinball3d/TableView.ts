@@ -3,12 +3,8 @@ import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   TABLE,
-  TABLE_PARTS,
-  BUMPERS,
-  BONUS_TARGETS,
-  COMMITTEE_TARGET_IDS,
-  FEATURE_TARGETS,
-  TELEPORTERS,
+  APPROPRIATIONS_LAYOUT,
+  type BoardLayout,
   RAMP_SAMPLES,
   FLIPPERS,
   flipperVertices,
@@ -78,7 +74,7 @@ export class TableView {
   private featureAssemblies = new Map<string, THREE.Group>();
   private featureLights = new Map<string, THREE.PointLight>();
   private featureKinds = new Map<string, string>();
-  constructor() {
+  constructor(readonly layout: BoardLayout = APPROPRIATIONS_LAYOUT) {
     this.scene.background = new THREE.Color("#08251d");
     this.table.rotation.x = TABLE.tilt;
     this.scene.add(this.table);
@@ -94,7 +90,10 @@ export class TableView {
     // Group static geometry by material: a curved ramp has many simple physical
     // segments but only a few GPU draw calls.
     const batches = new Map<string, THREE.BufferGeometry[]>();
-    for (const part of TABLE_PARTS) {
+    for (const part of layout.parts) {
+      // Sensors are drawn by their dedicated inserts below. Their collider
+      // geometry is a trigger only and should not look like a raised button.
+      if (part.role === "sensor") continue;
       const source = geometry(part);
       const g = source.index ? source.toNonIndexed() : source;
       if (g !== source) source.dispose();
@@ -479,7 +478,7 @@ export class TableView {
     const seal = new THREE.Mesh(new THREE.TorusGeometry(0.070, 0.006, 8, 32), this.material("#d9be5f"));
     seal.rotation.x = Math.PI / 2; seal.position.set(0, 0.026, -0.535); this.table.add(seal);
     this.text("★ WARRR ★", 0, 0.033, -0.535, 0.095, "#f0d26a", 0.018);
-    for (const b of BUMPERS) {
+    for (const b of this.layout.bumpers) {
       const assembly = new THREE.Group();
       assembly.position.set(b.x, 0, b.z);
       this.table.add(assembly);
@@ -567,7 +566,7 @@ export class TableView {
         assembly.add(bolt);
       }
     }
-    for (const feature of FEATURE_TARGETS) {
+    for (const feature of this.layout.featureTargets) {
       const group = new THREE.Group();
       group.position.set(feature.x, 0, feature.z);
       const light = new THREE.PointLight(feature.color, 0.25, 0.18, 2);
@@ -623,7 +622,7 @@ export class TableView {
         }
       }
     }
-    for (const portal of TELEPORTERS) {
+    for (const portal of this.layout.teleporters) {
       const group = new THREE.Group();
       group.position.set(portal.x, 0.008, portal.z);
       const outer = new THREE.Mesh(
@@ -675,7 +674,7 @@ export class TableView {
       0.012,
     );
     this.text("LAUNCH", 0.273, 0.015, 0.35, 0.043, "#e4c47c", 0.011);
-    for (const target of BONUS_TARGETS) {
+    for (const target of this.layout.bonusTargets) {
       const lamp = new THREE.MeshStandardMaterial({
         color: target.color,
         emissive: target.color,
@@ -849,7 +848,7 @@ export class TableView {
   }
   teleport(id: string) {
     const entry = this.teleporters.get(id);
-    const exitId = TELEPORTERS.find((portal) => portal.id === id)?.exitId;
+    const exitId = this.layout.teleporters.find((portal) => portal.id === id)?.exitId;
     const exit = exitId ? this.teleporters.get(exitId) : undefined;
     if (entry) entry.scale.setScalar(1.65);
     if (exit) exit.scale.setScalar(1.35);
@@ -882,7 +881,7 @@ export class TableView {
     return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
   }
   setTargets(ids: Set<string>) {
-    for (const id of COMMITTEE_TARGET_IDS) {
+    for (const id of this.layout.bonusTargets.map((target) => target.id)) {
       const lamp = this.lamps.get(id);
       if (lamp) lamp.emissiveIntensity = ids.has(id) ? 2 : 0.35;
     }

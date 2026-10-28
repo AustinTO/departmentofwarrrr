@@ -1,6 +1,6 @@
 # Procurement 3D architecture
 
-Status: implementation now lives in `src/pinball3d/` (2026-09-12). `table.ts` owns shared shape data; `PinballPhysics.ts` owns Rapier; `TableView.ts` renders those shapes and decoration; `Procurement3DGame.ts` owns input/HUD/rules; the small Phaser `ProcurementScene` owns campaign navigation. The remaining sections describe the original design targets where not superseded here.
+Status (2026-10-28): implemented in `src/pinball3d/`. `table.ts` resolves a shared `BoardLayout` consumed by both `PinballPhysics` and `TableView`; each board varies its upper-playfield bumper/award placement while retaining the same protected shooter, ramp, flipper, drain and lower geometry. `Procurement3DGame` coordinates board changes, input, HUD, local play and authorized contract settlement; Phaser retains campaign navigation. Runtime geometry uses a 0.62 × 1.22 m table, 0.0145 m ball radius and π/30 table tilt. Latest recorded verification: 129 tests across 16 files and production build pass. Physical-device performance and player fun evaluation remain open; see [evaluation](PINBALL_3D_EVALUATION.md).
 
 Current controls: invisible lower-left/right touch zones, a visible physical plunger dragged downward and released, A/D or arrows for flippers, Space held/released for keyboard launch, P/Escape pause and F2 debug. Touch roles stay attached to pointer IDs; cancellation releases them. The canvas occupies most of the phone screen with a compact scoreboard and status strip. Original green enamel, military star, chrome edges, cyan ramp guards and a raised title plaque are built around actual 3D geometry. Ramp flooring is a generated indexed static trimesh with internal-edge correction, not separate convex floor tiles; guards and structure remain simple hulls/primitives. Physics runs at 120 Hz with CCD and explicit tolerances; mobile profiling remains outstanding.
 
@@ -85,7 +85,7 @@ A: dynamic Rapier rigid body with revolute joint, limits and motor/torque drive.
 
 B: position-based kinematic body with bounded angular acceleration/velocity and separate press/return profiles. Set next kinematic rotation in physics steps so Rapier infers contact velocity; do not teleport or tween the render mesh. Test rotational swept-contact limitations explicitly. Avoid adding a second generic hit impulse on top of solver transfer.
 
-Both use identical bat geometry and ball feeds. Compare tip/base hits, cradle release, catches, weak taps, rapid reversals and 12 m/s impacts. The winner is pending evaluation; neither theoretical realism nor perfect prescribed motion alone decides it.
+The implemented table uses bounded position-based kinematic flippers with the shared bat geometry. A comparative physical-motor bake-off and player feel study remain pending; do not treat implementation as a completed feel evaluation.
 
 ## Rules, controls and browser lifecycle
 
@@ -107,7 +107,7 @@ Start capped device pixel ratio at 1.5 (low tier 1), at most 100 draw calls/100k
 
 Debug switches: Rapier collider lines, names/IDs, sensors, contact points/normals, speed/vector, physics ticks, render frame time, rail/ramp samples, flipper angle/velocity and active events. Add a small development DOM parameter panel with exportable typed recipe values, not an entire editor. Debug views must use live collider data and share the camera/transform conventions.
 
-Performance measurements: **not collected**. Known physics problems: **untested**; candidate risks are ramp seams, fast rotating contacts, thin-sensor misses and scaling tolerances. Record concrete failures with recipe/version/feed in the evaluation log.
+Desktop/headless gameplay and geometry verification have been recorded, but physical-device performance measurements and subjective playability evaluation are **pending**. Keep remaining device, fun-study and manual lifecycle gates explicit in the evaluation log; do not infer a pass from the build or automated tests.
 
 ## Authoring workflow
 

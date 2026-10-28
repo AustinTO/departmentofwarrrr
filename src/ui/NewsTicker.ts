@@ -1,6 +1,6 @@
 
 import * as Phaser from 'phaser';
-import { headlines } from '../helpers/NewsHeadlines';
+import { campaignHeadlines } from '../helpers/NewsHeadlines';
 
 export class NewsTicker extends Phaser.GameObjects.Container {
     private text: Phaser.GameObjects.Text;
@@ -15,7 +15,7 @@ export class NewsTicker extends Phaser.GameObjects.Container {
         this.add(background);
 
         // Join headlines and create the text object
-        const tickerText = headlines.join('   ***   ');
+        const tickerText = campaignHeadlines().join('   ***   ');
         this.text = scene.add.text(width, 10, tickerText, {
             fontSize: '24px',
             color: '#ffff00',

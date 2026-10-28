@@ -1,7 +1,6 @@
 # Procurement 3D pinball implementation plan
 
-Status: proposed implementation, 2026-09-11. Branch: `procurement-3d-pinball`.
-This document supersedes the Godot proposal and the procurement portion of the older major-game-improvements roadmap. This change delivers planning documents, not a working 3D prototype.
+Status (2026-10-28): the Three.js + Rapier procurement implementation is in place. The sequence below is retained as a record of the implementation and remaining acceptance work, rather than a proposed build plan. Latest recorded verification is 129 tests across 16 files plus a passing production build; device and player-study gates remain open. Branch: `procurement-3d-pinball`.
 
 ## Mission and boundaries
 
@@ -26,15 +25,11 @@ The branch started with uncommitted source/art changes. Preserve those changes; 
 
 ## Delivery sequence and acceptance gates
 
-1. **Baseline and reference record.** Run existing tests/build, record failures separately, and capture a playable Planck session and mobile measurements for comparison. Preserve fixture inputs, device/browser version and revision. Reference inspection is documented; implementation remains pending.
-2. **Replacement host and loading spike.** Replace the procurement scene’s physics/render path with `src/pinball3d/`. Lazy-load Three.js and initialize Rapier asynchronously using the simplest Vite-compatible package; prefer `@dimforge/rapier3d-compat` initially and measure its payload. Prove production/offline Capacitor loading, pause/resume and cleanup before table construction. Test cancellation while WASM initializes and show a recoverable loading/error state.
-3. **Scale, table and ball.** Implement shared geometry specs, inclined playfield, spawn/drain, fixed cameras and debug overlays. Compare 60/120 Hz physics at constant rendering quality. Do not lock the ball to a 2D plane. Gate: controlled release rolls downhill and airborne motion is possible without custom downhill forces.
-4. **Flipper bake-off.** Build dynamic revolute-joint/motor and position-based kinematic variants behind the same component API. Test both with identical ball feeds and tick rates. Record aiming, taps, catches, impact response and input latency; choose on playability and measured stability.
-5. **Curved rail and elevated ramp.** Derive mesh and collider geometry from one sampled path/frame set. Gate: edit radius/rise/bank through parameters, regenerate once, and pass alignment/clearance tests. A ball must enter, climb, cross above another reachable surface, and exit with physics alone. Failed low-energy climbs must roll back naturally. No ramp locks, teleport exits or path-following assist.
-6. **Playable procurement slice.** Add two bumpers, target, sensor, physical gate, plunger, drain and two flippers. Use isolated local scoring. Three staged shots: launch skill shot, bumper inflation, target to light an elevated ramp bonus. Three balls, brief first-ball save and instant restart are rules-layer features; log any save separately from geometry success. Keep multiball and the remaining kit components deferred.
-7. **Touch and art iteration.** Touch is present from the first playable build, then refined here. Add simultaneous flipper/plunger support, safe areas, pointer cancellation and keyboard parity. Apply editorial-cartoon materials, painted surface textures, emissive-looking inserts, readable elevation and restrained effects. Compare perspective/long-lens/orthographic cameras on a phone. Run visual-verdict against the chosen art/readability reference on each visual iteration and retain the verdict under `.omx/state/procurement-3d/ralph-progress.json`.
-8. **Mobile and authoring evaluation.** Execute the quantitative protocol, compare against Planck, and have another agent perform the same rail/ramp edit without touching generated mesh/collider code. Stop feature expansion if fundamental ramp/flipper tests fail. Publish measurements, traces and unresolved issues in the evaluation document.
-9. **Campaign integration and cutover.** Reuse existing procurement arithmetic through a narrow tested adapter, preserving its mutation semantics and exactly-once authorization. Test full readiness → 3D procurement → mansion flow, reload, cancellation and return. Cut over the branch’s procurement route to 3D once the gates pass; rollback means reverting the branch commit or returning to `main`, not shipping two selectable implementations.
+1. **Host, scale and table — implemented.** The Phaser host enters the async Three/Rapier game; shared geometry and board selection feed the renderer and physics. Physics runs at 120 Hz. Actual incline, launch, drain and airborne ball motion are covered in automated tests.
+2. **Geometry and board variants — implemented.** Each `BoardLayout` generates shared visual/physical parts. Three layouts vary upper-playfield bumper placement and contract-award location while tests protect the common shooter, ramp, flippers, drain and lower geometry.
+3. **Playable procurement slice — implemented.** The table includes flippers, bumpers, targets, ramp, teleport features, plunger, drain and local scoring. Contract authorization settles once through `ProcurementSystem`; UI reports authorized units, cost, profit and delivery fiscal year. Settlement and delivery behavior have regression coverage.
+4. **Input, presentation and lifecycle — implemented in code; manual device checks remain.** Touch/keyboard controls, board switching, pause and disposal exist. Device/WebView lifecycle and touch latency evidence are still needed.
+5. **Remaining acceptance work.** Complete physical-device performance, comparative Planck measurements, independent authoring exercise, player fun/readability study, and remaining manual lifecycle checks. Track evidence and open gates in [evaluation](PINBALL_3D_EVALUATION.md).
 
 Steps 3–5 are sequential physics prerequisites. Art asset preparation and fixture design may run independently after component contracts are stable. One owner integrates host lifecycle and performs final verification; do not split the same component's mesh and collider between independent owners.
 
@@ -42,7 +37,7 @@ Steps 3–5 are sequential physics prerequisites. Art asset preparation and fixt
 
 Use `pnpm exec vitest run` and `pnpm run build` for current regression/type checking. The repository has no dedicated lint script; report that gap instead of claiming lint passed. Add focused geometry, rules-event, flipper-feed and lifecycle tests during implementation, plus browser/WebView checks. Do not treat a headless physics pass as mobile/render/playability evidence.
 
-All mandatory gates in [evaluation](PINBALL_3D_EVALUATION.md) must pass before merging this branch. If 3D improves authoring but misses mobile or fun gates, reduce geometry/render cost and repeat the failing measurements; if the hypothesis still fails, do not merge and document the reason against the Planck baseline.
+The automated implementation gates pass at the latest recorded revision. Physical-device, comparative and fun gates in [evaluation](PINBALL_3D_EVALUATION.md) are not yet complete; do not mark the comparative study or release readiness complete until their evidence is recorded.
 
 ## Principal risks
 

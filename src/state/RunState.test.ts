@@ -20,6 +20,14 @@ describe('RunState inventory transfers', () => {
         expect(run.transferInventory('homeland', 'active', WeaponType.INTERCEPTOR_BLOCK_II, 10)).toBe(false);
         expect(run.theaters.homeland.inventory[WeaponType.INTERCEPTOR_BLOCK_II]).toBe(5);
     });
+
+    it('rejects non-positive, fractional, and same-theater transfers', () => {
+        const run = new RunState();
+        expect(run.transferInventory('active', 'reserve', WeaponType.INTERCEPTOR, 0)).toBe(false);
+        expect(run.transferInventory('active', 'reserve', WeaponType.INTERCEPTOR, -2)).toBe(false);
+        expect(run.transferInventory('active', 'reserve', WeaponType.INTERCEPTOR, 1.5)).toBe(false);
+        expect(run.transferInventory('active', 'active', WeaponType.INTERCEPTOR, 1)).toBe(false);
+    });
 });
 
 describe('RunState campaign lifecycle', () => {
@@ -50,6 +58,28 @@ describe('RunState campaign lifecycle', () => {
 
         expect(restored.activeDoctrine?.id).toBe('test');
         expect(restored.activeDoctrine?.effect.costMultiplier).toBe(2);
+    });
+
+    it('persists the seeded random stream and event/procurement campaign state', () => {
+        const run = new RunState();
+        run.campaignSeed = 123456;
+        run.randomCounter = 8;
+        run.lastEventConsequence = 'Audit trail protected';
+        run.eventHistory = ['2026: AUDIT — PROTECT'];
+        run.authorizedProcurementFY = 2026;
+        run.nextRandom();
+        run.nextRandom();
+        run.save();
+        const expectedNext = run.nextRandom();
+
+        const restored = new RunState();
+        restored.load();
+        expect(restored.campaignSeed).toBe(123456);
+        expect(restored.randomCounter).toBe(run.randomCounter - 1);
+        expect(restored.nextRandom()).toBe(expectedNext);
+        expect(restored.lastEventConsequence).toBe('Audit trail protected');
+        expect(restored.eventHistory).toEqual(['2026: AUDIT — PROTECT']);
+        expect(restored.authorizedProcurementFY).toBe(2026);
     });
 
     it('resets progress without leaving stale inventory or doctrine state', () => {

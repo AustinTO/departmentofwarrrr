@@ -1,6 +1,7 @@
 
 import * as Phaser from 'phaser';
 import { generatePressRelease } from '../helpers/PressReleaseGenerator';
+import { currentRun } from '../state/RunState';
 
 export class PressReleaseScene extends Phaser.Scene {
     constructor() {
@@ -19,6 +20,10 @@ export class PressReleaseScene extends Phaser.Scene {
             fontSize: '32px',
             color: '#aaaaaa',
             fontStyle: 'bold',
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, 145, `CAMPAIGN SEED ${currentRun.campaignSeed}`, {
+            fontSize: '18px', color: '#9bcbd4', fontStyle: 'bold'
         }).setOrigin(0.5);
 
         this.add.text(width / 2, 200, release.headline, {

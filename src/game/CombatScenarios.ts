@@ -80,5 +80,7 @@ export const COMBAT_SCENARIOS: CombatScenario[] = [
     }
 ];
 
-export const scenarioForFiscalYear = (fy: number) =>
-    COMBAT_SCENARIOS[(fy - 2026 + COMBAT_SCENARIOS.length) % COMBAT_SCENARIOS.length];
+export const scenarioForFiscalYear = (fy: number, seed = 0) => {
+    const offset = (seed >>> 0) % COMBAT_SCENARIOS.length;
+    return COMBAT_SCENARIOS[((fy - 2026 + offset) % COMBAT_SCENARIOS.length + COMBAT_SCENARIOS.length) % COMBAT_SCENARIOS.length];
+};

@@ -2,10 +2,9 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { Quaternion, Euler, Vector3 } from "three";
 import {
   TABLE,
-  TABLE_PARTS,
+  APPROPRIATIONS_LAYOUT,
+  type BoardLayout,
   FLIPPERS,
-  FEATURE_TARGETS,
-  TELEPORTERS,
   flipperVertices,
   type Point,
   type Part,
@@ -43,7 +42,7 @@ export class PinballPhysics {
   private unstuckSide = -1;
   private teleportLockedUntil = 0;
   state: "ready" | "playing" | "drained" = "ready";
-  private constructor() {
+  private constructor(readonly layout: BoardLayout = APPROPRIATIONS_LAYOUT) {
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.world.numSolverIterations = 8;
     this.world.integrationParameters.normalizedAllowedLinearError = 0.0001;
@@ -52,7 +51,7 @@ export class PinballPhysics {
     const structure = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setRotation(tilt),
     );
-    for (const part of TABLE_PARTS) {
+    for (const part of layout.parts) {
       // The lower approval bank is a through-target: it emits from proximity
       // and deliberately has no physics collider to interfere with the shot.
       if (part.id.startsWith("drop-")) continue;
@@ -142,10 +141,10 @@ export class PinballPhysics {
     );
     this.reset();
   }
-  static async create() {
+  static async create(layout: BoardLayout = APPROPRIATIONS_LAYOUT) {
     initialized ??= RAPIER.init();
     await initialized;
-    return new PinballPhysics();
+    return new PinballPhysics(layout);
   }
   get ballPosition() {
     const p = this.ball.translation();
@@ -220,10 +219,10 @@ export class PinballPhysics {
       if (!started || this.state !== "playing") return;
       const part = this.colliderIds.get(a) ?? this.colliderIds.get(b);
       if (!part || !["bumper", "target", "sensor", "sling"].includes(part.role)) return;
-      const portal = TELEPORTERS.find((entry) => entry.id === part.id);
+      const portal = this.layout.teleporters.find((entry) => entry.id === part.id);
       if (portal) {
         if (this.time < this.teleportLockedUntil) return;
-        const exit = TELEPORTERS.find((entry) => entry.id === portal.exitId)!;
+        const exit = this.layout.teleporters.find((entry) => entry.id === portal.exitId)!;
         const velocity = this.velocity;
         this.ball.setTranslation(worldPoint([exit.x, 0.048, exit.z]), true);
         this.ball.setLinvel(
@@ -242,7 +241,8 @@ export class PinballPhysics {
       if (part.id === "contract-award") {
         // The Award scoop is a sensor plus kicker: never leave the ball inside
         // a visual hole without an explicit, playable eject trajectory.
-        this.ball.setTranslation(worldPoint([0.02, 0.075, -0.40]), true);
+        const award = this.layout.featureTargets.find((feature) => feature.id === "contract-award")!;
+        this.ball.setTranslation(worldPoint([award.x + 0.02, 0.075, award.z + 0.10]), true);
         this.ball.setLinvel(worldPoint([0.28, 0.12, 0.95]), true);
         this.lastMotionAt = this.time;
         this.events.push({ type: "hit", id: "contract-award" });
@@ -269,7 +269,7 @@ export class PinballPhysics {
     });
     if (this.state !== "playing") return;
     const p = this.ballPosition;
-    for (const feature of FEATURE_TARGETS) {
+    for (const feature of this.layout.featureTargets) {
       if (feature.kind !== "drop") continue;
       if (p.distanceTo(new Vector3(feature.x, 0.02, feature.z)) < 0.032 && (this.cooldown.get(feature.id) ?? -1) <= this.time) {
         this.cooldown.set(feature.id, this.time + 0.28);

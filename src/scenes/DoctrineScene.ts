@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { DOCTRINES } from '../game/config';
 import type { Doctrine } from '../game/config';
 import { currentRun } from '../state/RunState';
+import { seededShuffle } from '../game/SeededRandom';
 
 export class DoctrineScene extends Phaser.Scene {
     constructor() {
@@ -23,7 +24,7 @@ export class DoctrineScene extends Phaser.Scene {
             strokeThickness: 8
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 215, 'CHOOSE THE POLICY THAT WILL SHAPE YOUR NEXT DISASTER', {
+        this.add.text(width / 2, 215, `SEED ${currentRun.campaignSeed}  •  ${currentRun.lastEventConsequence || 'CHOOSE THE POLICY THAT WILL SHAPE YOUR NEXT DISASTER'}`, {
             fontSize: '22px', color: '#9bcbd4', fontStyle: 'bold'
         }).setOrigin(0.5);
 
@@ -32,7 +33,7 @@ export class DoctrineScene extends Phaser.Scene {
 
     private renderDoctrines(width: number, _height: number) {
         // Randomly pick 3 doctrines to show
-        const shuffled = [...DOCTRINES].sort(() => 0.5 - Math.random());
+        const shuffled = seededShuffle([...DOCTRINES], () => currentRun.nextRandom());
         const selected = shuffled.slice(0, 3);
 
         selected.forEach((doctrine, i) => {

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { PinballBoardId } from "../game/PinballBoards";
 
 export const TABLE = {
   tilt: Math.PI / 30,
@@ -22,7 +23,7 @@ export interface Part {
   color: string;
   role: "deck" | "rail" | "bumper" | "target" | "sensor" | "sling" | "ramp";
 }
-export const BUMPERS = [
+const APPROPRIATIONS_BUMPERS = [
   {
     id: "cost-overrun",
     x: -0.072,
@@ -48,7 +49,7 @@ export const BUMPERS = [
     color: "#ca9aff",
   },
 ];
-export const FEATURE_TARGETS = [
+const APPROPRIATIONS_FEATURE_TARGETS = [
   { id: "contract-award", x: 0, z: -0.500, label: "AWARD", color: "#e6c55d", kind: "scoop" },
   { id: "budget-printer", x: 0, z: -0.105, label: "PRINT", color: "#e85845", kind: "printer" },
   { id: "war-chest-left", x: -0.235, z: 0.360, label: "CHEST", color: "#d6b452", kind: "chest" },
@@ -59,10 +60,11 @@ export const FEATURE_TARGETS = [
   { id: "spinner", x: 0.205, z: 0.170, label: "SPIN", color: "#e6c55d", kind: "spinner" },
 ];
 export const TELEPORTERS = [
-  { id: "classified-transfer-left", x: -0.245, z: -0.115, exitId: "classified-transfer-right", color: "#63e0d1" },
-  { id: "classified-transfer-right", x: 0.115, z: -0.145, exitId: "classified-transfer-left", color: "#c58cff" },
+  // Keep these in the open upper side pockets, clear of the ramp and shooter exit.
+  { id: "classified-transfer-left", x: -0.27, z: 0, exitId: "classified-transfer-right", color: "#63e0d1" },
+  { id: "classified-transfer-right", x: 0.15, z: 0, exitId: "classified-transfer-left", color: "#c58cff" },
 ];
-export const BONUS_TARGETS = [
+const APPROPRIATIONS_BONUS_TARGETS = [
   {
     id: "audit",
     x: 0.183,
@@ -88,7 +90,37 @@ export const BONUS_TARGETS = [
     color: "#63e0d1",
   },
 ];
-export const COMMITTEE_TARGET_IDS = BONUS_TARGETS.map((target) => target.id);
+export interface BoardLayout {
+  id: PinballBoardId;
+  bumpers: typeof APPROPRIATIONS_BUMPERS;
+  featureTargets: typeof APPROPRIATIONS_FEATURE_TARGETS;
+  bonusTargets: typeof APPROPRIATIONS_BONUS_TARGETS;
+  teleporters: typeof TELEPORTERS;
+  parts: Part[];
+}
+
+/** One immutable geometry selection shared by the renderer and physics world. */
+export function resolveBoardLayout(id: PinballBoardId = "appropriations"): BoardLayout {
+  const bumperPositions: Record<PinballBoardId, [number, number][]> = {
+    appropriations: [[-0.072, -0.255], [0, -0.305], [0.072, -0.255]],
+    audit_chamber: [[-0.105, -0.270], [0.105, -0.270], [0, -0.195]],
+    supplemental_stadium: [[-0.135, -0.285], [0, -0.255], [0.135, -0.285]],
+  };
+  const featurePositions: Record<PinballBoardId, Record<string, [number, number]>> = {
+    appropriations: {},
+    audit_chamber: { "contract-award": [-0.085, -0.485] },
+    supplemental_stadium: { "contract-award": [0.085, -0.485] },
+  };
+  const bumpers = APPROPRIATIONS_BUMPERS.map((b, i) => ({ ...b, x: bumperPositions[id][i][0], z: bumperPositions[id][i][1] }));
+  const featureTargets = APPROPRIATIONS_FEATURE_TARGETS.map((f) => {
+    const position = featurePositions[id][f.id];
+    return position ? { ...f, x: position[0], z: position[1] } : f;
+  });
+  const bonusTargets = APPROPRIATIONS_BONUS_TARGETS;
+  const layout = { id, bumpers, featureTargets, bonusTargets, teleporters: TELEPORTERS, parts: [] as Part[] };
+  layout.parts = makeTable(layout);
+  return layout;
+}
 export const FLIPPERS = {
   left: {
     pivot: [-0.13, 0.022, 0.405] as Point,
@@ -148,7 +180,12 @@ export const RAMP_SAMPLES = new THREE.CatmullRomCurve3(
   RAMP_POINTS.map((p) => new THREE.Vector3(...p)),
 ).getPoints(80);
 
-export function makeTable(): Part[] {
+export function makeTable(layout: Pick<BoardLayout, "bumpers" | "featureTargets" | "bonusTargets" | "teleporters"> = {
+  bumpers: APPROPRIATIONS_BUMPERS,
+  featureTargets: APPROPRIATIONS_FEATURE_TARGETS,
+  bonusTargets: APPROPRIATIONS_BONUS_TARGETS,
+  teleporters: TELEPORTERS,
+}): Part[] {
   const parts: Part[] = [];
   const box = (
     id: string,
@@ -222,7 +259,7 @@ export function makeTable(): Part[] {
       );
     }
   }
-  for (const b of BUMPERS)
+  for (const b of layout.bumpers)
     parts.push({
       id: b.id,
       kind: "cylinder",
@@ -232,7 +269,7 @@ export function makeTable(): Part[] {
       role: "bumper",
       color: b.color,
     });
-  for (const portal of TELEPORTERS) {
+  for (const portal of layout.teleporters) {
     parts.push({
       id: portal.id,
       kind: "cylinder",
@@ -243,7 +280,7 @@ export function makeTable(): Part[] {
       color: portal.color,
     });
   }
-  for (const feature of FEATURE_TARGETS) {
+  for (const feature of layout.featureTargets) {
     if (feature.kind === "scoop" || feature.kind === "printer") {
       parts.push({
         id: feature.id,
@@ -264,7 +301,7 @@ export function makeTable(): Part[] {
       box(feature.id, [feature.x, 0.012, feature.z], [0.022, 0.018, 0.010], "sensor", feature.color);
     }
   }
-  for (const target of BONUS_TARGETS) {
+  for (const target of layout.bonusTargets) {
     if (target.id === "black-budget") {
       parts.push({
         id: target.id,
@@ -359,4 +396,9 @@ export function makeTable(): Part[] {
   });
   return parts;
 }
-export const TABLE_PARTS = makeTable();
+export const APPROPRIATIONS_LAYOUT = resolveBoardLayout("appropriations");
+export const BUMPERS = APPROPRIATIONS_LAYOUT.bumpers;
+export const FEATURE_TARGETS = APPROPRIATIONS_LAYOUT.featureTargets;
+export const BONUS_TARGETS = APPROPRIATIONS_LAYOUT.bonusTargets;
+export const COMMITTEE_TARGET_IDS = BONUS_TARGETS.map((target) => target.id);
+export const TABLE_PARTS = APPROPRIATIONS_LAYOUT.parts;

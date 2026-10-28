@@ -1,3 +1,5 @@
+import { currentRun } from '../state/RunState';
+
 export interface Character {
     id: string;
     name: string;
@@ -71,5 +73,5 @@ export const CHARACTERS: Record<string, Character> = {
 
 export const characterLine = (characterId: keyof typeof CHARACTERS, scene: 'combat' | 'procurement') => {
     const lines = CHARACTERS[characterId].lines[scene];
-    return lines[Math.floor(Math.random() * lines.length)];
+    return lines[Math.floor(currentRun.nextRandom() * lines.length)];
 };

@@ -4,7 +4,8 @@ import { TableView } from "./TableView";
 import { ProcurementSystem } from "../game/ProcurementSystem";
 import { WeaponType } from "../game/config";
 import { currentRun } from "../state/RunState";
-import { COMMITTEE_TARGET_IDS } from "./table";
+import { PINBALL_BOARDS, PINBALL_BOARD_ORDER, type PinballBoardId } from "../game/PinballBoards";
+import { resolveBoardLayout } from "./table";
 import "./pinball.css";
 
 export interface Procurement3DOptions {
@@ -19,7 +20,7 @@ export class Procurement3DGame {
   private renderer?: THREE.WebGLRenderer;
   private view?: TableView;
   private physics?: PinballPhysics;
-  private readonly contract = new ProcurementSystem();
+  private readonly contract: ProcurementSystem;
   private readonly abort = new AbortController();
   private readonly pointers = new Map<number, Control>();
   private plungerDrag?: { id: number; startY: number; travel: number };
@@ -32,6 +33,7 @@ export class Procurement3DGame {
   private disposed = false;
   private paused = false;
   private authorized = false;
+  private boardLocked = false;
   private balls = 3;
   private charge = 0;
   private accumulator = 0;
@@ -42,30 +44,43 @@ export class Procurement3DGame {
   private debug = false;
   private audio?: AudioContext;
   private muted = false;
+  private switchingBoard = false;
+  private boardSwitchToken = 0;
+  private layout = resolveBoardLayout(currentRun.selectedBoard);
   private resizeObserver?: ResizeObserver;
   private readonly metricFrames: number[] = [];
   constructor(private options: Procurement3DOptions) {
+    const available = currentRun.availableBoards();
+    if (!available.includes(currentRun.selectedBoard)) currentRun.selectedBoard = "appropriations";
+    this.contract = new ProcurementSystem(currentRun.selectedBoard);
     this.root.className = "procurement-machine";
     this.root.setAttribute("aria-label", "Appropriations pinball");
     this.root.innerHTML = `
           <div class="machine-shell">
-            <header class="machine-header"><div class="agency-line"><span class="agency-seal">★</span><span>DEPARTMENT OF WARRR <small>PROCUREMENT DIVISION</small></span><button data-action="camera" aria-label="Show 3D camera angle">◎</button><button data-action="pause" aria-label="Pause game">Ⅱ</button><button data-action="sound" aria-label="Mute sound">♪</button></div>
-              <div class="scoreboard"><div><span>CONTRACT VALUE</span><strong data-readout="budget">$0</strong></div><div><span>DELIVERY DELAY</span><strong data-readout="delay">+0.0 YR</strong></div><div><span>REQUIREMENTS</span><strong data-readout="balls">● ● ●</strong></div></div>
+            <header class="machine-header"><div class="agency-line"><span class="agency-seal">★</span><span>DEPARTMENT OF WARRR <small>PROCUREMENT DIVISION</small></span><button data-action="board" aria-label="Select procurement board">BOARD</button><button data-action="camera" aria-label="Show 3D camera angle">◎</button><button data-action="pause" aria-label="Pause game">Ⅱ</button><button data-action="sound" aria-label="Mute sound">♪</button></div><div class="board-menu" hidden></div>
+              <div class="scoreboard"><div><span>CONTRACT VALUE</span><strong data-readout="budget">$0</strong></div><div><span>DELIVERY DELAY</span><strong data-readout="delay">+0.0 YR</strong></div><div><span>REQUIREMENTS</span><strong data-readout="balls">● ● ●</strong></div></div><div class="contract-preview" data-readout="preview"></div><div class="board-rule" data-readout="board-rule"></div>
             </header>
             <div class="table-viewport" aria-label="Touch lower left or right playfield to flip. Drag the plunger down to launch."><div class="table-caption"><span>● LIVE HEARING</span><span data-readout="objective">LIGHT SUPPLEMENTAL RAMP</span></div><div class="load-message">Opening the hearing…</div><output class="debug-readout" hidden></output><span class="plunger-hint" aria-hidden="true">PULL ↓</span><div class="touch-hints" aria-hidden="true"><span>TOUCH TO FLIP</span><span>TOUCH TO FLIP</span></div></div>
             <footer class="machine-footer"><div class="mission-strip"><span class="mission-light"></span><p data-readout="status">Pull the plunger down. Touch either lower side to flip.</p><span data-readout="combo">×1</span></div>
-              <div class="bottom-line"><button data-action="authorize">Authorize ↗</button></div>
+              <div class="bottom-line"><button data-action="discard">Discard draft &amp; exit</button><button data-action="authorize">Authorize ↗</button></div>
             </footer><div class="machine-dialog" hidden></div>
           </div>`;
     this.options.mount.append(this.root);
     this.viewport = this.root.querySelector(".table-viewport")!;
     this.bindInput();
+    this.renderBoardLabel();
   }
   async start() {
-    const physics = await PinballPhysics.create();
+    let physics = await PinballPhysics.create(this.layout);
     if (this.disposed) {
       physics.dispose();
       return;
+    }
+    if (this.layout.id !== currentRun.selectedBoard) {
+      physics.dispose();
+      this.layout = resolveBoardLayout(currentRun.selectedBoard);
+      physics = await PinballPhysics.create(this.layout);
+      if (this.disposed) { physics.dispose(); return; }
     }
     this.physics = physics;
     this.renderer = new THREE.WebGLRenderer({
@@ -85,7 +100,8 @@ export class Procurement3DGame {
     );
     this.viewport.prepend(this.renderer.domElement);
     this.viewport.querySelector(".load-message")?.remove();
-    this.view = new TableView();
+    this.view = new TableView(this.layout);
+    this.renderBoardLabel();
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(this.viewport);
     this.resize();
@@ -96,7 +112,7 @@ export class Procurement3DGame {
         this.setPaused(true);
         this.showDialog(
           "Hearing interrupted",
-          "The display was interrupted. Return and reopen procurement to resume a fresh table.",
+          "The display was interrupted. Returning discards any unapproved draft without cost, profit, or delivery. Reopen procurement to start a fresh table.",
           "Return",
           () => this.options.onExit(),
         );
@@ -115,6 +131,8 @@ export class Procurement3DGame {
   }
   private bindInput() {
     const signal = this.abort.signal;
+    this.root.querySelector('[data-action="board"]')!.addEventListener("click", () => this.toggleBoardMenu(), { signal });
+    this.root.querySelector('[data-action="discard"]')!.addEventListener("click", () => this.confirmDiscard(), { signal });
     this.root.addEventListener(
       "pointerdown",
       (e) => {
@@ -237,6 +255,93 @@ export class Procurement3DGame {
       .querySelector('[data-action="authorize"]')!
       .addEventListener("click", () => this.authorize(), { signal });
   }
+  private renderBoardLabel() {
+    const board = PINBALL_BOARDS[currentRun.selectedBoard];
+    this.root.querySelector<HTMLElement>('[data-action="board"]')!.textContent = board.name.replace(/ TABLE$/, "");
+    this.readout("board-rule").textContent = `${board.name} — ${this.ruleLabel(currentRun.selectedBoard)}`;
+    if (this.view) this.view.scene.background = new THREE.Color(board.accent).multiplyScalar(0.08);
+  }
+  private ruleLabel(id: PinballBoardId) {
+    return id === "audit_chamber" ? "Audit finds markup every 2 hits (×3 cap)" : id === "supplemental_stadium" ? "Stadium markup every 4 hits (×5 cap)" : "Markup every 3 hits (×4 cap)";
+  }
+  private toggleBoardMenu() {
+    const menu = this.root.querySelector<HTMLElement>(".board-menu")!;
+    menu.replaceChildren();
+    const available = currentRun.availableBoards();
+    PINBALL_BOARD_ORDER.forEach(id => {
+      const def = PINBALL_BOARDS[id], button = document.createElement("button");
+      button.dataset.board = id;
+      const unlocked = available.includes(id);
+      const gameplayLocked = this.boardLocked && id !== currentRun.selectedBoard;
+      button.textContent = !unlocked
+        ? `${def.name} — LOCKED: FY ${def.unlockFy} or ${def.unlockMansions} mansions`
+        : gameplayLocked ? `${def.name} — TABLE ALREADY IN PLAY` : `${def.name} — ${this.ruleLabel(id)}`;
+      button.disabled = !unlocked || gameplayLocked;
+      button.setAttribute("aria-pressed", String(currentRun.selectedBoard === id));
+      button.onclick = async () => {
+        if (!unlocked || this.authorized || (this.boardLocked && id !== currentRun.selectedBoard)) return;
+        if (id === currentRun.selectedBoard) { menu.hidden = true; return; }
+        currentRun.selectedBoard = id;
+        this.contract.setBoard(id);
+        currentRun.save();
+        menu.hidden = true;
+        await this.switchBoard(id);
+        this.renderBoardLabel();
+      };
+      menu.append(button);
+    });
+    menu.hidden = !menu.hidden;
+  }
+  private async switchBoard(id: PinballBoardId) {
+    if (!this.renderer || !this.view || !this.physics || this.boardLocked || this.disposed) return;
+    const token = ++this.boardSwitchToken;
+    this.switchingBoard = true;
+    const layout = resolveBoardLayout(id);
+    try {
+      const nextPhysics = await PinballPhysics.create(layout);
+      if (this.disposed || this.boardLocked || token !== this.boardSwitchToken || currentRun.selectedBoard !== id) {
+        nextPhysics.dispose();
+        return;
+      }
+      const nextView = new TableView(layout);
+      const previousPhysics = this.physics;
+      const previousView = this.view;
+      this.physics = nextPhysics;
+      this.view = nextView;
+      this.layout = layout;
+      previousPhysics.dispose();
+      this.renderer.renderLists.dispose();
+      previousView.dispose();
+      this.renderBoardLabel();
+      this.refresh();
+    } catch {
+      if (token === this.boardSwitchToken && currentRun.selectedBoard === id) {
+        currentRun.selectedBoard = this.layout.id;
+        this.contract.setBoard(this.layout.id);
+        currentRun.save();
+        this.renderBoardLabel();
+        this.say("That table could not be opened. Your current board and contract are unchanged.");
+      }
+    } finally {
+      if (token === this.boardSwitchToken) this.switchingBoard = false;
+    }
+  }
+  private confirmDiscard() {
+    if (this.authorized) return;
+    this.showDialog("Discard this draft?", "No contract has been authorized. Discarding records no taxpayer cost, contractor profit, or delivery units.", "Discard & exit", () => {
+      this.contract.discard();
+      this.options.onExit();
+    });
+  }
+  private lockBoardSelection() {
+    this.boardLocked = true;
+    this.root.querySelectorAll<HTMLButtonElement>(".board-menu button").forEach(button => {
+      const id = button.dataset.board as PinballBoardId;
+      if (id === currentRun.selectedBoard || button.disabled) return;
+      button.disabled = true;
+      button.textContent = `${PINBALL_BOARDS[id].name} — TABLE ALREADY IN PLAY`;
+    });
+  }
   private held(control: Control) {
     return (
       [...this.pointers.values()].includes(control) ||
@@ -248,7 +353,8 @@ export class Procurement3DGame {
     );
   }
   private launch() {
-    if (this.paused || this.authorized) return;
+    if (this.paused || this.authorized || this.switchingBoard) return;
+    this.lockBoardSelection();
     this.physics?.launch(Math.max(0.35, this.charge));
     this.charge = 0;
   }
@@ -310,10 +416,23 @@ export class Procurement3DGame {
     this.authorized = true;
     this.keys.clear();
     this.pointers.clear();
-    const { summary } = this.contract.authorize();
+    const settlement = this.contract.authorize();
+    if (!settlement.authorized) {
+      this.authorized = false;
+      this.say(settlement.summary);
+      return;
+    }
+    const { summary, batches } = settlement;
+    const units = batches.reduce((total, batch) => total + batch.quantity, 0);
+    const deliveryYear = batches[0]?.fiscalYear ?? currentRun.currentFY;
+    const profitMultiplier = currentRun.activeDoctrine?.effect.profitMargin ?? 1;
+    const profit = this.contract.state.value * 0.15 * profitMultiplier;
+    const itemList = Object.entries(this.contract.state.items)
+      .filter(([, quantity]) => (quantity ?? 0) > 0)
+      .map(([weapon, quantity]) => `${quantity} × ${weapon}`).join("; ") || "No units";
     this.showDialog(
-      "Rubber-stamped.",
-      `${this.contract.formatBudget(this.contract.state.value)} authorized. ${summary} The contractors thank you.`,
+      "Settlement recorded.",
+      `${units} units (${itemList}). Cost: ${this.contract.formatBudget(this.contract.state.value)}. Contractor profit: ${this.contract.formatBudget(profit)}. Delivery: FY ${deliveryYear} to Active Operation. ${summary}`,
       "Visit McLean ↗",
       () => (this.options.onAuthorize ?? this.options.onExit)(),
     );
@@ -428,7 +547,7 @@ export class Procurement3DGame {
           label = "AUDIT — EFFICIENCY DETECTED";
           delay = -0.1;
         }
-        if (COMMITTEE_TARGET_IDS.includes(e.id)) {
+        if (this.layout.bonusTargets.some((target) => target.id === e.id)) {
           this.targets.add(e.id);
           value = 1e9;
           label =
@@ -461,6 +580,12 @@ export class Procurement3DGame {
           outcome: value < 0 ? "efficiency" : "inflate",
           badgeFrame: 0,
         });
+        if (this.contract.claimEmergencyMultiball()) {
+          const extra = Math.min(2, 5 - this.balls);
+          this.balls += extra;
+          this.say(`${label} • ${extra} additional requirement${extra === 1 ? "" : "s"} authorized`);
+        }
+        this.lockBoardSelection();
         this.say(
           `${label}  ${result.scaledValue < 0 ? "−" : "+"}${this.contract.formatBudget(Math.abs(result.scaledValue))}`,
         );
@@ -477,9 +602,15 @@ export class Procurement3DGame {
     );
     this.readout("delay").textContent =
       `+${this.contract.state.leadTimeDelay.toFixed(1)} YR`;
-    this.readout("balls").textContent = Array.from({ length: 3 }, (_, i) =>
+    this.readout("balls").textContent = Array.from({ length: Math.max(3, this.balls) }, (_, i) =>
       i < this.balls ? "●" : "○",
     ).join(" ");
+    const units = Object.values(this.contract.state.items).reduce((sum, n) => sum + (n ?? 0), 0);
+    const types = Object.entries(this.contract.state.items).filter(([, n]) => (n ?? 0) > 0).map(([type, quantity]) => `${quantity}×${type}`).join(", ") || "no units yet";
+    const speed = currentRun.activeDoctrine?.effect.productionSpeed ?? 1;
+    const eta = currentRun.currentFY + Math.max(1, Math.ceil(this.contract.state.leadTimeDelay / speed));
+    const profit = this.contract.state.value * 0.15 * (currentRun.activeDoctrine?.effect.profitMargin ?? 1);
+    this.readout("preview").textContent = `Draft: ${types} (${units} total) • cost ${this.contract.formatBudget(this.contract.state.value)} • profit ${this.contract.formatBudget(profit)} • FY ${eta} • Active Operation`;
     this.readout("combo").textContent = `×${this.contract.comboMultiplier()}`;
     this.readout("objective").textContent =
       this.warChests.size === 2
