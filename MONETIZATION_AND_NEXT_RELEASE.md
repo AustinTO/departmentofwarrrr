@@ -41,6 +41,16 @@ P2: build a short standalone **Daily Budget Crisis** (one scenario, one procurem
 
 P3: integrate minimal privacy-conscious funnel metrics (first launch, first shot, ally incident, first FY completed, procurement completed, next-day return, optional ad viewed, supporter conversion). A Cloudflare Worker plus aggregated D1 can work, but privacy/legal/age declarations must be completed before collecting data. Do not invent retention percentages from automated tests.
 
+## Critical Android release blocker: unsupported Capacitor target combination
+
+Current checked-in dependencies are @capacitor/android / core / cli **6.2.x**, while `android/variables.gradle` manually sets `compileSdkVersion = 36` and `targetSdkVersion = 36`. Google's August 31, 2026 rule requires target API 36+ for new Android apps and updates. However, the Capacitor supported SDK matrix pairs Capacitor **6.x with API 34**, and **8.x with API 36**; the Capacitor team explicitly does not support overriding to a different target SDK with the old major. An API-36 declaration alone is not a verified compatible build. Official references:
+- https://support.google.com/googleplay/android-developer/answer/11926878
+- https://next.capacitorjs.com/docs/next/android/setting-target-sdk
+
+**Before release**, upgrade `@capacitor/core`, `@capacitor/android`, `@capacitor/cli`, `@capacitor/app` and `@capacitor/preferences` to compatible Capacitor 8 versions and follow their migration guides; regenerate lockfile with pnpm, sync/carefully reconcile the Android Gradle project, and test Android 16/API36 plus an older supported device. Investigate WebView/WASM startup, edge-to-edge/safe area, background/resume, media/audio and 3D graphics. Do NOT ship an untested major upgrade, and do NOT present this branch as a compliant release.
+
+Native monetization must also use supported Play Billing Library **8 or newer** at new publication/update time and a properly tested native ads adapter; Google Billing 7's new-publication/update support ended August 31, 2026. Official: https://developer.android.com/google/play/billing/deprecation-faq.
+
 ## Release decision gates
 
 - Android device build/install, offline cold start, and repeated WebView suspend/resume.
