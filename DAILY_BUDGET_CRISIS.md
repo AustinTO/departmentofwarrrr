@@ -9,7 +9,7 @@ This short, optional, daily challenge is separate from the existing fiscal-year 
 3. Review the combat grade and select one strategy:
    - Fast-track: lose 8 active-theater readiness, increase the doctrine's profit multiplier by 0.35.
    - Oversight: restore up to 8 active readiness, decrease the multiplier by 0.15 (minimum 0.5).
-4. Play the actual Three/Rapier procurement pinball with **two balls** rather than three, authorizing a contract or discarding it.
+4. Play the actual Three/Rapier procurement pinball with **two balls** rather than three and a visible **150-second active-play deadline** (the timer pauses while the hearing is paused). At the deadline the player may authorize the accrued contract or leave without it.
 5. Review the local-only dossier, share or copy real results, retry the same daily challenge, or return to campaign.
 
 Players may retry as often as they like. An early combat exit is permitted but cannot set a daily personal best. Defeats cannot set a best. Skipping authorization is permitted but forgoes procurement score points. The mode does not load ads or require payment.

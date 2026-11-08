@@ -42,6 +42,7 @@ export class ProcurementScene extends Phaser.Scene {
         onExit: leave,
         onAuthorize: leave,
         initialBalls: isDailyActive() ? 2 : 3,
+        maxActiveSeconds: isDailyActive() ? 150 : undefined,
       });
       this.machine = machine;
       await machine.start();

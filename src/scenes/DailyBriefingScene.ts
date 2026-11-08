@@ -26,7 +26,7 @@ export class DailyBriefingScene extends Phaser.Scene {
         const lines = [
             ['01  DEFEND FOR 60 SECONDS', definition.scenarioName + '\n' + definition.objective],
             ['02  MAKE ONE POLICY CHOICE', 'Rush the contract at a readiness cost, or preserve the audit trail.'],
-            ['03  PLAY 2 PINBALL REQUIREMENTS', 'Authorize a procurement contract or discard the draft.'],
+            ['03  PLAY 2 PINBALL REQUIREMENTS', 'A 2½-minute hearing. Authorize the contract or discard the draft.'],
             ['04  SHARE YOUR DOSSIER', 'Beat your local best. Everyone gets the same daily scenario and doctrine.']
         ];
         lines.forEach(([title, description], i) => {
