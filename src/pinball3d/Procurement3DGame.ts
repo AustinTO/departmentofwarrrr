@@ -707,23 +707,23 @@ export class Procurement3DGame {
         this.closeTimedHearing();
       }
       if (this.balls > 0) {
-      if (this.elapsed > this.comboExpiry) this.contract.state.combo = 0;
-      if (
-        this.keys.has(" ") &&
-        !this.plungerDrag &&
-        this.physics.state === "ready"
-      )
-        this.charge = Math.min(1, this.charge + dt * 0.9);
-      this.accumulator += dt;
-      let steps = 0;
-      while (this.accumulator >= 1 / 120 && steps++ < 6) {
-        this.physics.step(1 / 120, {
-          left: this.held("left"),
-          right: this.held("right"),
-        });
-        this.processEvents();
-        this.accumulator -= 1 / 120;
-      }
+        if (this.elapsed > this.comboExpiry) this.contract.state.combo = 0;
+        if (
+          this.keys.has(" ") &&
+          !this.plungerDrag &&
+          this.physics.state === "ready"
+        )
+          this.charge = Math.min(1, this.charge + dt * 0.9);
+        this.accumulator += dt;
+        let steps = 0;
+        while (this.accumulator >= 1 / 120 && steps++ < 6) {
+          this.physics.step(1 / 120, {
+            left: this.held("left"),
+            right: this.held("right"),
+          });
+          this.processEvents();
+          this.accumulator -= 1 / 120;
+        }
       }
     }
     this.view.sync(this.physics, dt);
