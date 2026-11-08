@@ -19,6 +19,14 @@ The current package has Capacitor Android, Phaser, Three and Rapier but no integ
 - New manual-only GitHub Actions test/build workflow. No workflow runs on push.
 - Regression tests for the persisted training preference. This branch has NOT been run against physical devices or the full CI suite; run the workflow and browser/mobile playtest before merging.
 
+## Browser-first donation test (implemented packaging path, not published)
+
+Run `pnpm run build:itch` to compile a standalone Vite build with relative URLs, specifically suitable for deployment under an itch.io HTML5 embed URL or other subpath. Zip **the files inside dist**, with `index.html` at the ZIP root, and preview the uploaded browser version before publishing. Normal `pnpm run build` and the Android Capacitor packaging path remain unchanged. A manual-only CI workflow builds both variants but does not upload or deploy.
+
+itch.io currently permits **donations only for HTML5 games that run directly in the browser**, not a mandatory paywall on that HTML5 embed. Create a free HTML Game with optional $2.99 suggested support, and use appropriate screenshots/store copy to test whether players value the satire. For charging minimum access price instead, distribute a supported desktop/downloadable build and test it first. Seller payment setup, tax handling, licensing, and the actual storefront publication remain manual. The game still has no payment service integration.
+
+Official instructions: https://itch.io/docs/creators/html5 and https://itch.io/docs/creators/payments.
+
 ## Sustainable monetization experiments, in priority order
 
 1. **Free game, voluntary rewarded ads at a genuine break only.** After combat results or at procurement setup, offer a clearly labeled opt-in ad for a modest *one-time-per-FY* convenience or bonus (e.g. one extra pinball ball, never a forced ad, never fake scarcity). The offer must be absent when ads are unavailable or consent is missing. Avoid interrupting waves, pinball, or callbacks. Implement AdMob native integration, consent gating, mobile lifecycle recovery, test IDs, reward callback semantics and an idempotent per-FY grant in separate steps. Never grant ad rewards on load/open/close, only the completed reward callback. Add anti-abuse/SSV before valuable rewards.
