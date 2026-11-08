@@ -4,10 +4,12 @@ import { currentRun } from '../state/RunState';
 import { NewsTicker } from '../ui/NewsTicker';
 import { WeaponType, WEAPON_CONFIGS } from '../game/config';
 import { scenarioForFiscalYear } from '../game/CombatScenarios';
+import { previewTransfer } from '../game/ReadinessTransfers';
 
 export class ReadinessScene extends Phaser.Scene {
     private transferBatch = 1;
-    private pendingTransfer: { key: string; quantity: number } | null = null;
+    private selectedSourceId: string = 'reserve';
+    private feedback?: Phaser.GameObjects.Text;
 
     constructor() {
         super('ReadinessScene');
@@ -66,114 +68,168 @@ export class ReadinessScene extends Phaser.Scene {
         new NewsTicker(this, height - 180);
     }
 
+    /** A focused, one-source-at-a-time logistics screen replaces 25 tiny move controls. */
     private renderTheaters(width: number) {
-        const theaters = Object.values(currentRun.theaters);
-        const startY = 414;
-        const spacing = 238;
-        const cardHeight = 222;
-        const lines = [
-            ['SM-3', WeaponType.INTERCEPTOR, 0x006666],
-            ['SM-6', WeaponType.INTERCEPTOR_BLOCK_II, 0x666600],
-            ['HYDRA', WeaponType.HYDRA, 0x884422],
-            ['RAIL', WeaponType.RAILGUN, 0x226688],
-            ['SEEKER', WeaponType.SEEKER, 0x228866]
-        ] as const;
+        const active = currentRun.theaters.active;
+        const sources = [
+            { id: 'reserve', label: 'RESERVE' },
+            { id: 'indo_pacific', label: 'INDO-PAC' },
+            { id: 'europe', label: 'EUROPE' },
+            { id: 'homeland', label: 'HOMELAND' }
+        ];
+        const source = currentRun.theaters[this.selectedSourceId] ?? currentRun.theaters.reserve;
+        const rows = [
+            { label: 'SM-3 INTERCEPTOR', type: WeaponType.INTERCEPTOR, color: 0x147b94 },
+            { label: 'SM-6 BLOCK II', type: WeaponType.INTERCEPTOR_BLOCK_II, color: 0x89702b },
+            { label: 'HYDRA CLUSTER', type: WeaponType.HYDRA, color: 0x8b5337 },
+            { label: 'RAILGUN', type: WeaponType.RAILGUN, color: 0x376c99 },
+            { label: 'SEEKER DRONES', type: WeaponType.SEEKER, color: 0x257c68 }
+        ];
 
-        theaters.forEach((theater, i) => {
-            const y = startY + i * spacing;
-            this.add.rectangle(width / 2, y, width - 48, cardHeight, 0x2a3a4a, 0.94).setOrigin(0.5);
-
-            const role = theater.id === 'active' ? 'ACTIVE' : theater.id === 'reserve' ? 'RESERVE' : 'FORWARD';
-            const readinessColor = theater.readiness > 70 ? '#00ff88' : theater.readiness > 40 ? '#ffff00' : '#ff6666';
-            this.add.text(38, y - 99, `${theater.name.toUpperCase()}  ·  ${role}`, {
-                fontSize: '25px', color: theater.id === 'active' ? '#8fffff' : '#ffffff', fontStyle: 'bold',
-                wordWrap: { width: width - 320 }
-            });
-            this.add.text(width - 36, y - 99, `${Math.floor(theater.readiness)}% READY`, {
-                fontSize: '23px', color: readinessColor, fontStyle: 'bold'
-            }).setOrigin(1, 0);
-
-            lines.forEach(([label, type, color], idx) => {
-                const lineY = y - 62 + idx * 32;
-                const stock = theater.inventory[type] || 0;
-                this.add.text(45, lineY, `${label}: ${stock}`, {
-                    fontSize: '21px', color: idx < 2 ? '#ffffff' : '#cfe8ff'
-                });
-
-                if (theater.id !== 'active') {
-                    const buttonX = width - 115;
-                    this.add.rectangle(buttonX, lineY + 12, 150, 27, color)
-                        .setInteractive({ useHandCursor: true })
-                        .on('pointerdown', () => this.chooseTransfer(theater.id, type, label));
-                    this.add.text(buttonX, lineY + 12, `MOVE ${this.transferBatch}`, {
-                        fontSize: '16px', color: '#ffffff', fontStyle: 'bold'
-                    }).setOrigin(0.5);
-                }
-            });
+        this.add.rectangle(width / 2, 291, width - 70, 158, 0x081d2b, 0.96)
+            .setStrokeStyle(3, 0x5de6ff);
+        this.add.text(75, 224, 'ACTIVE THEATER INVENTORY', {
+            fontSize: '29px', color: '#7df4ff', fontStyle: 'bold'
+        });
+        this.add.text(width - 75, 227, `${Math.floor(active.readiness)}% READY`, {
+            fontSize: '25px', color: active.readiness > 40 ? '#a8ff93' : '#ff765e', fontStyle: 'bold'
+        }).setOrigin(1, 0);
+        const inv = active.inventory;
+        this.add.text(75, 278, `SM-3 ${inv[WeaponType.INTERCEPTOR] ?? 0}  •  SM-6 ${inv[WeaponType.INTERCEPTOR_BLOCK_II] ?? 0}  •  HYDRA ${inv[WeaponType.HYDRA] ?? 0}`, {
+            fontSize: '28px', color: '#ffffff', fontStyle: 'bold'
+        });
+        this.add.text(75, 328, `RAIL ${inv[WeaponType.RAILGUN] ?? 0}  •  SEEKER ${inv[WeaponType.SEEKER] ?? 0}`, {
+            fontSize: '28px', color: '#ffffff', fontStyle: 'bold'
         });
 
-        const selectorY = 238;
-        this.add.text(40, selectorY, 'TRANSFER BATCH', { fontSize: '19px', color: '#ffffff', fontStyle: 'bold' });
-        [1, 5, 10].forEach((batch, idx) => {
-            const x = 220 + idx * 96;
+        this.add.text(58, 414, '1  •  CHOOSE SUPPLY SOURCE', {
+            fontSize: '29px', color: '#ffdf8d', fontStyle: 'bold'
+        });
+        sources.forEach((option, i) => {
+            const x = 150 + i * 258;
+            const selected = option.id === this.selectedSourceId;
+            const box = this.add.rectangle(x, 500, 236, 108, selected ? 0x126a87 : 0x203444, 0.98)
+                .setStrokeStyle(selected ? 5 : 2, selected ? 0xa8ff93 : 0x517589)
+                .setInteractive({ useHandCursor: true })
+                .on('pointerdown', () => {
+                    if (this.selectedSourceId === option.id) return;
+                    this.selectedSourceId = option.id;
+                    this.scene.restart();
+                });
+            box.setDepth(4);
+            this.add.text(x, 500, option.label, {
+                fontSize: '27px', color: selected ? '#ffffff' : '#d8ecf4', fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(5);
+        });
+
+        this.add.text(58, 579, `2  •  MOVE FROM ${source.name.toUpperCase()}  (${Math.floor(source.readiness)}% READY)`, {
+            fontSize: '28px', color: '#ffdf8d', fontStyle: 'bold',
+            wordWrap: { width: width - 116 }
+        });
+
+        rows.forEach(({ label, type, color }, i) => {
+            const y = 682 + i * 166;
+            const available = source.inventory[type] || 0;
+            const current = active.inventory[type] || 0;
+            const amount = Math.min(this.transferBatch, available);
+            this.add.rectangle(width / 2, y, width - 76, 146, 0x102937, 0.97)
+                .setStrokeStyle(2, 0x507186);
+            this.add.rectangle(48, y - 58, 8, 115, color, 1).setOrigin(0, 0);
+            this.add.text(76, y - 53, label, {
+                fontSize: '33px', color: '#ffffff', fontStyle: 'bold'
+            });
+            this.add.text(76, y + 5, `SOURCE: ${available}    →    ACTIVE: ${current}`, {
+                fontSize: '26px', color: '#bdddea'
+            });
+            this.add.rectangle(width - 190, y, 285, 112, amount ? color : 0x34404a, 1)
+                .setStrokeStyle(3, amount ? 0xffffff : 0x63737d)
+                .setInteractive({ useHandCursor: true })
+                .on('pointerdown', () => this.chooseTransfer(this.selectedSourceId, type, label));
+            this.add.text(width - 190, y, amount ? `MOVE ${amount}` : 'NO STOCK', {
+                fontSize: '29px', color: '#ffffff', fontStyle: 'bold'
+            }).setOrigin(0.5);
+        });
+
+        this.add.text(58, 1516, 'TRANSFER AMOUNT', {
+            fontSize: '27px', color: '#ffdf8d', fontStyle: 'bold'
+        });
+        [1, 5, 10].forEach((batch, i) => {
+            const x = 560 + i * 175;
             const selected = this.transferBatch === batch;
-            this.add.rectangle(x, selectorY + 15, 78, 36, selected ? 0x00aabb : 0x344454)
+            this.add.rectangle(x, 1532, 150, 100, selected ? 0x087a42 : 0x314858, 1)
+                .setStrokeStyle(selected ? 5 : 2, selected ? 0xa8ff93 : 0x6794a5)
                 .setInteractive({ useHandCursor: true })
                 .on('pointerdown', () => {
                     this.transferBatch = batch;
                     this.scene.restart();
                 });
-            this.add.text(x, selectorY + 15, `${batch}`, { fontSize: '20px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+            this.add.text(x, 1532, `${batch}`, {
+                fontSize: '35px', color: '#ffffff', fontStyle: 'bold'
+            }).setOrigin(0.5);
         });
-        this.add.text(525, selectorY + 2, 'Select a source munition to preview exact stock and readiness impact.', {
-            fontSize: '17px', color: '#cfe8ff', wordWrap: { width: width - 550 }
-        });
+        this.feedback = this.add.text(width / 2, 1643, 'Tap MOVE to preview source, destination and readiness impact before confirming.', {
+            fontSize: '24px', color: '#d4ecf3', align: 'center',
+            wordWrap: { width: width - 110 }
+        }).setOrigin(0.5);
     }
 
     private chooseTransfer(fromId: string, weaponType: WeaponType, label: string) {
-        const key = `${fromId}:${weaponType}`;
+        const preview = previewTransfer(currentRun, fromId, weaponType, this.transferBatch);
+        if (!preview) {
+            this.feedback?.setText(`NO ${label} STOCK AVAILABLE IN THIS SOURCE.`).setColor('#ffb29d');
+            return;
+        }
+        const { width, height } = this.scale;
         const source = currentRun.theaters[fromId];
-        const active = currentRun.theaters.active;
-        const available = source?.inventory[weaponType] || 0;
-        const quantity = Math.min(this.transferBatch, available);
-        if (!source || quantity <= 0) {
-            this.pendingTransfer = null;
-            this.showPreview(`${label}: no stock available in ${source?.name ?? fromId}.`);
-            return;
-        }
-
-        if (this.pendingTransfer?.key === key) {
-            const committedQuantity = this.pendingTransfer.quantity;
-            this.pendingTransfer = null;
-            if (currentRun.transferInventory(fromId, 'active', weaponType, committedQuantity)) {
-                this.cameras.main.flash(200, 0, 255, 255);
-                this.scene.restart();
-            }
-            return;
-        }
-
-        const sourceAfter = available - quantity;
-        const activeBefore = active.inventory[weaponType] || 0;
-        const activeAfter = activeBefore + quantity;
-        const readinessPenalty = fromId === 'reserve' ? 0 : (quantity / 20) * 5;
-        const readinessAfter = Math.max(0, source.readiness - readinessPenalty);
-        const globalBefore = currentRun.globalReadiness;
-        const globalAfter = fromId === 'reserve'
-            ? globalBefore
-            : Math.floor((Object.values(currentRun.theaters).reduce((sum, t) => sum + t.readiness, 0) - source.readiness + readinessAfter)
-                / Object.values(currentRun.theaters).length);
-        const consequence = fromId === 'reserve'
-            ? `reserve readiness unchanged; global ${globalBefore}%`
-            : `${source.readiness.toFixed(1)}% → ${readinessAfter.toFixed(1)}% readiness; global ${globalBefore}% → ${globalAfter}%`;
-        this.pendingTransfer = { key, quantity };
-        this.showPreview(`${quantity} ${label}: ${source.name} stock ${available} → ${sourceAfter}; active stock ${activeBefore} → ${activeAfter}; ${consequence}. Tap the same MOVE button again to transfer.`);
-    }
-
-    private showPreview(message: string) {
-        // Keep the preview in a consistent space above the theater cards.
-        this.children.list.filter(child => child.getData('transferPreview')).forEach(child => child.destroy());
-        this.add.text(40, 285, message, {
-            fontSize: '17px', color: '#fff3bf', wordWrap: { width: this.scale.width - 80 }, lineSpacing: 2
-        }).setData('transferPreview', true);
+        const panel = this.add.container(0, 0).setDepth(5000);
+        panel.add(this.add.rectangle(width / 2, height / 2, width, height, 0x010811, 0.88)
+            .setInteractive());
+        panel.add(this.add.rectangle(width / 2, height / 2, width - 100, 820, 0x0b2735, 0.99)
+            .setStrokeStyle(4, 0x7df4ff));
+        panel.add(this.add.text(width / 2, height / 2 - 320, 'CONFIRM TRANSFER', {
+            fontSize: '48px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5));
+        panel.add(this.add.text(width / 2, height / 2 - 240, `${preview.quantity} × ${label}`, {
+            fontSize: '33px', color: '#ffdf8d', fontStyle: 'bold'
+        }).setOrigin(0.5));
+        const details = [
+            `${source.name}: ${preview.sourceBefore} → ${preview.sourceAfter}`,
+            `ACTIVE THEATER: ${preview.activeBefore} → ${preview.activeAfter}`,
+            `SOURCE READINESS: ${preview.sourceReadinessBefore.toFixed(1)}% → ${preview.sourceReadinessAfter.toFixed(1)}%`,
+            `GLOBAL READINESS: ${preview.globalBefore}% → ${preview.globalAfter}%`
+        ];
+        panel.add(this.add.text(width / 2, height / 2 - 60, details.join('\n'), {
+            fontSize: '30px', color: '#e5f4fa', align: 'center', lineSpacing: 22,
+            wordWrap: { width: width - 160 }
+        }).setOrigin(0.5));
+        panel.add(this.add.text(width / 2, height / 2 + 157, 'This transfer uses existing stock. No purchase or new contract.', {
+            fontSize: '22px', color: '#9fc4ce', align: 'center', wordWrap: { width: width - 150 }
+        }).setOrigin(0.5));
+        const buttonY = height / 2 + 293;
+        const cancel = this.add.rectangle(width / 2 - 215, buttonY, 370, 105, 0x364752)
+            .setStrokeStyle(3, 0x93aebc).setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => panel.destroy(true));
+        panel.add(cancel);
+        panel.add(this.add.text(width / 2 - 215, buttonY, 'CANCEL', {
+            fontSize: '30px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5));
+        let confirmed = false;
+        const confirm = this.add.rectangle(width / 2 + 215, buttonY, 370, 105, 0x087a42)
+            .setStrokeStyle(4, 0xa8ff93).setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                if (confirmed) return;
+                confirmed = true;
+                if (currentRun.transferInventory(fromId, 'active', weaponType, preview.quantity)) {
+                    panel.destroy(true);
+                    this.scene.restart();
+                } else {
+                    panel.destroy(true);
+                    this.feedback?.setText('TRANSFER DID NOT APPLY. CHECK STOCK AND TRY AGAIN.').setColor('#ffb29d');
+                }
+            });
+        panel.add(confirm);
+        panel.add(this.add.text(width / 2 + 215, buttonY, 'CONFIRM', {
+            fontSize: '30px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5));
     }
 }

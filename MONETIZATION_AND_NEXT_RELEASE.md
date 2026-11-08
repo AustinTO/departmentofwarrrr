@@ -13,6 +13,7 @@ The current package has Capacitor Android, Phaser, Three and Rapier but no integ
 - One-time, local-device combat field guide that pauses the first 60-second wave. It explains targeting, ally identification, weapon selection, premature exit, and the campaign loop.
 - Replayable field guide from pause, separate from campaign reset state. Settings migration preserves existing volume values.
 - Persistent combat mission objective strip. Clearer goal regardless of random scenario choice.
+- Readiness logistics redesigned from five stacked source cards and 25 small transfer targets to a single selectable supply source, five large munition rows, batch selection, and an explicit confirmation modal. Pure transfer previews and unit tests check stock/readiness consequences.
 - Combat grade/score sheet now waits for an explicit Continue interaction (Enter on keyboard also works). The result overlay blocks combat input and the Continue action is one-shot.
 - New manual-only GitHub Actions test/build workflow. No workflow runs on push.
 - Regression tests for the persisted training preference. This branch has NOT been run against physical devices or the full CI suite; run the workflow and browser/mobile playtest before merging.
