@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "test": "vitest",
     "preview": "vite preview",
-    "build:itch": "tsc && vite build --base=./"
+    "build:itch": "tsc && vite build --base=./",
+    "check:itch": "node scripts/check-html5-build.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

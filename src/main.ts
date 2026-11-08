@@ -54,7 +54,7 @@ const config: Phaser.Types.Core.GameConfig = {
     scene: hash === '#planck-lab'
         ? [PinballPhysicsLab]
         : (hash === '#procurement' || hash.includes('author'))
-            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene, ...dailyScenes]
+            ? [BootScene, PreloaderScene, ProcurementScene, CombatScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene, ...dailyScenes]
             : hash === '#arsenal'
                 ? [BootScene, PreloaderScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene, ...dailyScenes]
                 : [BootScene, PreloaderScene, TitleScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab, ...dailyScenes]

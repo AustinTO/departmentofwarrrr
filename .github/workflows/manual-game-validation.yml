@@ -23,3 +23,11 @@ jobs:
       - run: pnpm exec vitest run
       - run: pnpm run build
       - run: pnpm run build:itch
+      - run: pnpm run check:itch
+      - name: Zip HTML5 preview
+        run: cd dist && zip -rq ../department-of-warrr-html5.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: department-of-warrr-html5-preview
+          path: department-of-warrr-html5.zip
+          retention-days: 7

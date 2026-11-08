@@ -27,6 +27,12 @@ itch.io currently permits **donations only for HTML5 games that run directly in 
 
 Official instructions: https://itch.io/docs/creators/html5 and https://itch.io/docs/creators/payments.
 
+## Daily Budget Crisis mini-run (implemented source, verification open)
+
+The title screen offers a separate UTC-seeded quick daily run. It uses the existing 60-second combat encounter, one tradeoff decision, a reduced two-ball procurement round, and a result dossier with locally stored personal best and native-share/clipboard fallback. Daily scratch mode suppresses campaign saves, then restores the prior persisted campaign at completion or quit. Campaign Hall of Fame and daily best are separate. These are **local, editable scores** and do not claim ranked security. See `DAILY_BUDGET_CRISIS.md`.
+
+The manual-only validation workflow now generates an HTML5 ZIP artifact after running tests, both Vite builds and a relative-path package check. Preview on itch.io before making public. No store listing, sales, telemetry, payment links or SDK integrations were created.
+
 ## Sustainable monetization experiments, in priority order
 
 1. **Free game, voluntary rewarded ads at a genuine break only.** After combat results or at procurement setup, offer a clearly labeled opt-in ad for a modest *one-time-per-FY* convenience or bonus (e.g. one extra pinball ball, never a forced ad, never fake scarcity). The offer must be absent when ads are unavailable or consent is missing. Avoid interrupting waves, pinball, or callbacks. Implement AdMob native integration, consent gating, mobile lifecycle recovery, test IDs, reward callback semantics and an idempotent per-FY grant in separate steps. Never grant ad rewards on load/open/close, only the completed reward callback. Add anti-abuse/SSV before valuable rewards.
