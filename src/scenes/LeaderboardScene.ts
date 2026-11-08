@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { currentRun } from '../state/RunState';
 import { audioManager } from '../managers/AudioManager';
+import { loadScores } from '../game/ScoreStore';
 
 export class LeaderboardScene extends Phaser.Scene {
     constructor() {
@@ -130,16 +131,7 @@ export class LeaderboardScene extends Phaser.Scene {
     }
 
     private getScores(): Array<{ fiscalYear: number; mansions: number; burn: number }> {
-        const saved = localStorage.getItem('warrr_leaderboard_v1');
-        if (saved) {
-            try {
-                const scores = JSON.parse(saved);
-                return Array.isArray(scores) ? scores : [];
-            } catch {
-                localStorage.removeItem('warrr_leaderboard_v1');
-            }
-        }
-        return [];
+        return loadScores(localStorage);
     }
 
     private formatCurrency(value: number): string {

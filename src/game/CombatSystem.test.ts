@@ -1,4 +1,4 @@
-import { CombatSystem } from './CombatSystem';
+import { CombatSystem, isActiveTheaterDefeated } from './CombatSystem';
 import { ThreatType, WeaponType } from './config';
 import { currentRun } from '../state/RunState';
 
@@ -80,5 +80,22 @@ describe('CombatSystem friendly contacts', () => {
         expect(result.grade).toBe('F');
         expect(result.score).toBeLessThanOrEqual(44);
         expect(result.reasons).toContain('SEVERE FRIENDLY FIRE: three incidents cap the grade at F');
+    });
+});
+
+
+describe('active theater defeat condition', () => {
+    it('ends the defense at zero active readiness even with other theaters healthy', () => {
+        currentRun.reset();
+        currentRun.theaters.active.readiness = 0;
+        currentRun.updateGlobalReadiness();
+        expect(currentRun.globalReadiness).toBe(80);
+        expect(isActiveTheaterDefeated(currentRun.theaters.active.readiness)).toBe(true);
+    });
+
+    it('does not end a live operation at positive readiness', () => {
+        expect(isActiveTheaterDefeated(100)).toBe(false);
+        expect(isActiveTheaterDefeated(5)).toBe(false);
+        expect(isActiveTheaterDefeated(0)).toBe(true);
     });
 });

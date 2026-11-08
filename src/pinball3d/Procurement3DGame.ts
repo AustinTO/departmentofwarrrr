@@ -12,6 +12,10 @@ export interface Procurement3DOptions {
   mount: HTMLElement;
   onExit: () => void;
   onAuthorize?: () => void;
+  /** Short daily form; full campaign retains three balls. */
+  initialBalls?: number;
+  /** Optional active play deadline in seconds; only used by the daily mode. */
+  maxActiveSeconds?: number;
 }
 type Control = Side | "launch";
 export class Procurement3DGame {
@@ -50,6 +54,9 @@ export class Procurement3DGame {
   private resizeObserver?: ResizeObserver;
   private readonly metricFrames: number[] = [];
   constructor(private options: Procurement3DOptions) {
+    if (Number.isInteger(options.initialBalls) && options.initialBalls! >= 1 && options.initialBalls! <= 3) {
+      this.balls = options.initialBalls!;
+    }
     const available = currentRun.availableBoards();
     if (!available.includes(currentRun.selectedBoard)) currentRun.selectedBoard = "appropriations";
     this.contract = new ProcurementSystem(currentRun.selectedBoard);
@@ -58,7 +65,7 @@ export class Procurement3DGame {
     this.root.innerHTML = `
           <div class="machine-shell">
             <header class="machine-header"><div class="agency-line"><span class="agency-seal">★</span><span>DEPARTMENT OF WARRR <small>PROCUREMENT DIVISION</small></span><button data-action="board" aria-label="Select procurement board">BOARD</button><button data-action="camera" aria-label="Show 3D camera angle">◎</button><button data-action="pause" aria-label="Pause game">Ⅱ</button><button data-action="sound" aria-label="Mute sound">♪</button></div><div class="board-menu" hidden></div>
-              <div class="scoreboard"><div><span>CONTRACT VALUE</span><strong data-readout="budget">$0</strong></div><div><span>DELIVERY DELAY</span><strong data-readout="delay">+0.0 YR</strong></div><div><span>REQUIREMENTS</span><strong data-readout="balls">● ● ●</strong></div></div><div class="contract-preview" data-readout="preview"></div><div class="board-rule" data-readout="board-rule"></div>
+              <div class="scoreboard"><div><span>CONTRACT VALUE</span><strong data-readout="budget">$0</strong></div><div><span>DELIVERY DELAY</span><strong data-readout="delay">+0.0 YR</strong></div><div><span>REQUIREMENTS</span><strong data-readout="balls">● ● ●</strong></div></div><div class="daily-machine-timer" data-readout="timer" hidden></div><div class="contract-preview" data-readout="preview"></div><div class="board-rule" data-readout="board-rule"></div>
             </header>
             <div class="table-viewport" aria-label="Touch lower left or right playfield to flip. Drag the plunger down to launch."><div class="table-caption"><span>● LIVE HEARING</span><span data-readout="objective">LIGHT SUPPLEMENTAL RAMP</span></div><div class="load-message">Opening the hearing…</div><output class="debug-readout" hidden></output><span class="plunger-hint" aria-hidden="true">PULL ↓</span><div class="touch-hints" aria-hidden="true"><span>TOUCH TO FLIP</span><span>TOUCH TO FLIP</span></div></div>
             <footer class="machine-footer"><div class="mission-strip"><span class="mission-light"></span><p data-readout="status">Pull the plunger down. Touch either lower side to flip.</p><span data-readout="combo">×1</span></div>
@@ -433,11 +440,27 @@ export class Procurement3DGame {
     this.showDialog(
       "Settlement recorded.",
       `${units} units (${itemList}). Cost: ${this.contract.formatBudget(this.contract.state.value)}. Contractor profit: ${this.contract.formatBudget(profit)}. Delivery: FY ${deliveryYear} to Active Operation. ${summary}`,
-      "Visit McLean ↗",
+      this.options.initialBalls === 2 ? "View daily dossier ↗" : "Visit McLean ↗",
       () => (this.options.onAuthorize ?? this.options.onExit)(),
     );
     this.tone(880, 0.3);
   }
+  private closeTimedHearing() {
+    if (this.balls <= 0 || this.authorized) return;
+    this.balls = 0;
+    this.keys.clear();
+    this.pointers.clear();
+    this.plungerDrag = undefined;
+    this.charge = 0;
+    this.say('DAILY DEADLINE EXPIRED • FILE YOUR CONTRACT');
+    this.showDialog(
+      'Appropriations deadline reached',
+      'The committee has adjourned. The draft can still be authorized, or you may file a dossier without a contract.',
+      this.contract.state.value > 0 ? 'Authorize contract' : 'File daily dossier',
+      () => this.contract.state.value > 0 ? this.authorize() : this.options.onExit(),
+    );
+  }
+
   private processEvents() {
     for (const e of this.physics!.drainEvents()) {
       if (e.type === "launch") {
@@ -471,7 +494,7 @@ export class Procurement3DGame {
             `Final contract: ${this.contract.formatBudget(this.contract.state.value)}. ${this.contract.state.value > 0 ? "Authorize it and send the invoice." : "No funding secured this time."}`,
             this.contract.state.value > 0
               ? "Authorize contract"
-              : "Return to McLean",
+              : this.options.initialBalls === 2 ? "View daily dossier" : "Return to McLean",
             () =>
               this.contract.state.value > 0
                 ? this.authorize()
@@ -597,12 +620,21 @@ export class Procurement3DGame {
     }
   }
   private refresh() {
+    const timer = this.readout('timer') as HTMLElement;
+    const deadline = this.options.maxActiveSeconds;
+    timer.hidden = !deadline;
+    if (deadline) {
+      const remaining = Math.max(0, Math.ceil(deadline - this.elapsed));
+      timer.textContent = 'DAILY HEARING DEADLINE  ' +
+        String(Math.floor(remaining / 60)).padStart(2, '0') + ':' +
+        String(remaining % 60).padStart(2, '0');
+    }
     this.readout("budget").textContent = this.contract.formatBudget(
       this.contract.state.value,
     );
     this.readout("delay").textContent =
       `+${this.contract.state.leadTimeDelay.toFixed(1)} YR`;
-    this.readout("balls").textContent = Array.from({ length: Math.max(3, this.balls) }, (_, i) =>
+    this.readout("balls").textContent = Array.from({ length: Math.max(this.options.initialBalls ?? 3, this.balls) }, (_, i) =>
       i < this.balls ? "●" : "○",
     ).join(" ");
     const units = Object.values(this.contract.state.items).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -671,22 +703,27 @@ export class Procurement3DGame {
     if (this.metricFrames.length > 600) this.metricFrames.shift();
     if (!this.paused && !this.authorized && this.balls > 0) {
       this.elapsed += dt;
-      if (this.elapsed > this.comboExpiry) this.contract.state.combo = 0;
-      if (
-        this.keys.has(" ") &&
-        !this.plungerDrag &&
-        this.physics.state === "ready"
-      )
-        this.charge = Math.min(1, this.charge + dt * 0.9);
-      this.accumulator += dt;
-      let steps = 0;
-      while (this.accumulator >= 1 / 120 && steps++ < 6) {
-        this.physics.step(1 / 120, {
-          left: this.held("left"),
-          right: this.held("right"),
-        });
-        this.processEvents();
-        this.accumulator -= 1 / 120;
+      if (this.options.maxActiveSeconds && this.elapsed >= this.options.maxActiveSeconds) {
+        this.closeTimedHearing();
+      }
+      if (this.balls > 0) {
+        if (this.elapsed > this.comboExpiry) this.contract.state.combo = 0;
+        if (
+          this.keys.has(" ") &&
+          !this.plungerDrag &&
+          this.physics.state === "ready"
+        )
+          this.charge = Math.min(1, this.charge + dt * 0.9);
+        this.accumulator += dt;
+        let steps = 0;
+        while (this.accumulator >= 1 / 120 && steps++ < 6) {
+          this.physics.step(1 / 120, {
+            left: this.held("left"),
+            right: this.held("right"),
+          });
+          this.processEvents();
+          this.accumulator -= 1 / 120;
+        }
       }
     }
     this.view.sync(this.physics, dt);

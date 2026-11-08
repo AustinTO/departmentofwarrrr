@@ -1,6 +1,11 @@
 import { WeaponType, ThreatType, WEAPON_CONFIGS, THREAT_CONFIGS } from './config';
 import { currentRun } from '../state/RunState';
 
+/** A defeated operation is determined by the theater actually under attack. */
+export function isActiveTheaterDefeated(activeReadiness: number): boolean {
+    return Number.isFinite(activeReadiness) && activeReadiness <= 0;
+}
+
 export interface CombatStats {
     taxpayerBurn: number;
     threatValueDestroyed: number;

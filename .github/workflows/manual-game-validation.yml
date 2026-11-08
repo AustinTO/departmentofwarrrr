@@ -1,0 +1,33 @@
+name: Manual Game Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run
+      - run: pnpm run build
+      - run: pnpm run build:itch
+      - run: pnpm run check:itch
+      - name: Zip HTML5 preview
+        run: cd dist && zip -rq ../department-of-warrr-html5.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: department-of-warrr-html5-preview
+          path: department-of-warrr-html5.zip
+          retention-days: 7

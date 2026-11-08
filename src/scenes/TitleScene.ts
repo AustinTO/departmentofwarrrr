@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { audioManager } from '../managers/AudioManager';
 import { currentRun } from '../state/RunState';
 import { SettingsPanel } from '../ui/SettingsPanel';
+import { abandonDaily, isDailyActive } from '../game/DailySession';
 
 export class TitleScene extends Phaser.Scene {
     constructor() {
@@ -9,6 +10,7 @@ export class TitleScene extends Phaser.Scene {
     }
 
     create() {
+        if (isDailyActive()) abandonDaily();
         const { width, height } = this.scale;
         this.input.enabled = true;
 
@@ -55,6 +57,12 @@ export class TitleScene extends Phaser.Scene {
             currentRun.save();
             this.sound.stopAll();
             this.scene.start('DoctrineScene');
+        });
+        y += 150;
+
+        this.addMenuButton(width / 2, y, 'DAILY BUDGET CRISIS', 0x87601b, 0xffd166, () => {
+            this.sound.stopAll();
+            this.scene.start('DailyBriefingScene');
         });
         y += 150;
 
