@@ -1,5 +1,6 @@
 import * as Phaser from "phaser";
 import type { Procurement3DGame } from "../pinball3d/Procurement3DGame";
+import { isDailyActive } from '../game/DailySession';
 
 /** Phaser owns navigation; the procurement machine owns its input and renderer. */
 export class ProcurementScene extends Phaser.Scene {
@@ -34,12 +35,13 @@ export class ProcurementScene extends Phaser.Scene {
       if (token !== this.generation) return;
       const leave = () => {
         this.game.loop.wake();
-        this.scene.start("MansionScene");
+        this.scene.start(isDailyActive() ? "DailyResultScene" : "MansionScene");
       };
       machine = new Procurement3DGame({
         mount: this.game.canvas.parentElement ?? document.body,
         onExit: leave,
         onAuthorize: leave,
+        initialBalls: isDailyActive() ? 2 : 3,
       });
       this.machine = machine;
       await machine.start();
@@ -69,13 +71,13 @@ export class ProcurementScene extends Phaser.Scene {
         .setInteractive()
         .on("pointerdown", () => this.scene.restart());
       this.add
-        .text(540, 920, "RETURN TO MCLEAN", {
+        .text(540, 920, (isDailyActive() ? "FINALIZE DAILY DOSSIER" : "RETURN TO MCLEAN"), {
           fontSize: "28px",
           color: "#eed8a7",
         })
         .setOrigin(0.5)
         .setInteractive()
-        .on("pointerdown", () => this.scene.start("MansionScene"));
+        .on("pointerdown", () => this.scene.start(isDailyActive() ? "DailyResultScene" : "MansionScene"));
     }
   }
 }

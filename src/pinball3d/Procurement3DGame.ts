@@ -12,6 +12,8 @@ export interface Procurement3DOptions {
   mount: HTMLElement;
   onExit: () => void;
   onAuthorize?: () => void;
+  /** Short daily form; full campaign retains three balls. */
+  initialBalls?: number;
 }
 type Control = Side | "launch";
 export class Procurement3DGame {
@@ -50,6 +52,9 @@ export class Procurement3DGame {
   private resizeObserver?: ResizeObserver;
   private readonly metricFrames: number[] = [];
   constructor(private options: Procurement3DOptions) {
+    if (Number.isInteger(options.initialBalls) && options.initialBalls! >= 1 && options.initialBalls! <= 3) {
+      this.balls = options.initialBalls!;
+    }
     const available = currentRun.availableBoards();
     if (!available.includes(currentRun.selectedBoard)) currentRun.selectedBoard = "appropriations";
     this.contract = new ProcurementSystem(currentRun.selectedBoard);
@@ -433,7 +438,7 @@ export class Procurement3DGame {
     this.showDialog(
       "Settlement recorded.",
       `${units} units (${itemList}). Cost: ${this.contract.formatBudget(this.contract.state.value)}. Contractor profit: ${this.contract.formatBudget(profit)}. Delivery: FY ${deliveryYear} to Active Operation. ${summary}`,
-      "Visit McLean ↗",
+      this.options.initialBalls === 2 ? "View daily dossier ↗" : "Visit McLean ↗",
       () => (this.options.onAuthorize ?? this.options.onExit)(),
     );
     this.tone(880, 0.3);
@@ -471,7 +476,7 @@ export class Procurement3DGame {
             `Final contract: ${this.contract.formatBudget(this.contract.state.value)}. ${this.contract.state.value > 0 ? "Authorize it and send the invoice." : "No funding secured this time."}`,
             this.contract.state.value > 0
               ? "Authorize contract"
-              : "Return to McLean",
+              : this.options.initialBalls === 2 ? "View daily dossier" : "Return to McLean",
             () =>
               this.contract.state.value > 0
                 ? this.authorize()

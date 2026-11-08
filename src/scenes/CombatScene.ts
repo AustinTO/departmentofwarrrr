@@ -13,6 +13,7 @@ import { PauseMenu } from '../ui/PauseMenu';
 import { CombatBriefing } from '../ui/CombatBriefing';
 import { gameSettings } from '../managers/GameSettings';
 import { recordScore } from '../game/ScoreStore';
+import { abandonDaily, isDailyActive, recordDailyCombat } from '../game/DailySession';
 import { SHEETS } from '../game/Sprites';
 import { hostileThreatsNear, pickDistinctTargets, steerSeeker } from '../game/SeekingProjectiles';
 import type { SeekerShotData } from '../game/SeekingProjectiles';
@@ -268,7 +269,8 @@ export class CombatScene extends Phaser.Scene {
             onResume: () => this.resumeFromPause(),
             onHelp: () => this.showCombatBriefing(),
             onQuitToTitle: () => {
-                currentRun.save();
+                if (isDailyActive()) abandonDaily();
+                else currentRun.save();
                 this.sound.stopAll();
                 audioManager.stopMusic();
                 this.scene.start('TitleScene');
@@ -299,6 +301,7 @@ export class CombatScene extends Phaser.Scene {
         const { width, height } = this.scale;
         const stats = this.combatSystem.getStats();
         const breakdown = this.combatSystem.getGradeBreakdown();
+        if (isDailyActive()) recordDailyCombat(stats, breakdown);
         const grade = breakdown.grade;
         const profitMargin = currentRun.activeDoctrine?.effect.profitMargin || 1.0;
         const combatProfit = (stats.taxpayerBurn * 0.15) * profitMargin;
@@ -309,9 +312,8 @@ export class CombatScene extends Phaser.Scene {
         currentRun.contractorProfit += combatProfit + stats.restraintBonus + gradeBonus;
         currentRun.reconcileMansions();
         currentRun.save();
-        // Every completed fiscal-year defense contributes to the local Hall of Fame.
-        // Previously only failures were recorded, and defeat was effectively unreachable.
-        recordScore(localStorage, {
+        // Daily scores belong to their own local, UTC-keyed ledger.
+        if (!isDailyActive()) recordScore(localStorage, {
             fiscalYear: currentRun.currentFY,
             mansions: currentRun.mansionsBuilt,
             burn: currentRun.taxpayerBurn
@@ -319,7 +321,7 @@ export class CombatScene extends Phaser.Scene {
 
         this.add.rectangle(0, 0, width, height, 0x000000, 0.75)
             .setOrigin(0).setDepth(1000).setInteractive();
-        this.add.text(width / 2, height / 2 - 260, 'FISCAL YEAR CONCLUDED', {
+        this.add.text(width / 2, height / 2 - 260, isDailyActive() ? 'DAILY DEFENSE COMPLETE' : 'FISCAL YEAR CONCLUDED', {
             fontSize: '64px',
             color: '#00ffff',
             align: 'center',
@@ -350,12 +352,13 @@ export class CombatScene extends Phaser.Scene {
             if (continued) return;
             continued = true;
             this.physics.world.resume();
-            this.scene.start('ReadinessScene');
+            this.scene.start(isDailyActive() ? 'DailyPolicyScene' : 'ReadinessScene');
         };
         this.add.rectangle(width / 2, height / 2 + 435, 668, 112, 0x087a42, 1)
             .setStrokeStyle(4, 0xa8ff93).setDepth(1002)
             .setInteractive({ useHandCursor: true }).on('pointerdown', continueYear);
-        this.add.text(width / 2, height / 2 + 435, 'REVIEW COMPLETE  •  CONTINUE', {
+        this.add.text(width / 2, height / 2 + 435,
+            isDailyActive() ? 'PROCEED TO POLICY BRIEF' : 'REVIEW COMPLETE  •  CONTINUE', {
             fontSize: '30px', color: '#ffffff', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(1003);
         this.add.text(width / 2, height / 2 + 525, 'Take your time: results stay until you continue.', {
@@ -1137,7 +1140,7 @@ export class CombatScene extends Phaser.Scene {
         this.showAuditCallout();
         threat.destroy();
         this.updateHUD();
-        if (currentRun.globalReadiness === 0) this.gameOver();
+        if (isActiveTheaterDefeated(activeTheater.readiness)) this.gameOver();
     }
 
     private spareFriendly(threat: Phaser.GameObjects.Container) {
@@ -1440,8 +1443,12 @@ export class CombatScene extends Phaser.Scene {
         this.physics.world.pause();
         const { width, height } = this.scale;
         const stats = this.combatSystem.getStats();
+        if (isDailyActive()) {
+            recordDailyCombat(stats, this.combatSystem.getGradeBreakdown());
+            currentRun.taxpayerBurn += stats.taxpayerBurn;
+        }
 
-        recordScore(localStorage, {
+        if (!isDailyActive()) recordScore(localStorage, {
             fiscalYear: currentRun.currentFY,
             mansions: currentRun.mansionsBuilt,
             burn: currentRun.taxpayerBurn + stats.taxpayerBurn
@@ -1467,12 +1474,13 @@ export class CombatScene extends Phaser.Scene {
             if (navigated) return;
             navigated = true;
             this.physics.world.resume();
-            this.scene.start('LeaderboardScene');
+            this.scene.start(isDailyActive() ? 'DailyResultScene' : 'LeaderboardScene',
+                isDailyActive() ? { defeated: true } : undefined);
         };
         this.add.rectangle(width / 2, height / 2 + 325, 640, 112, 0x126a87, 1)
             .setStrokeStyle(4, 0x7df4ff).setDepth(3001)
             .setInteractive({ useHandCursor: true }).on('pointerdown', viewScores);
-        this.add.text(width / 2, height / 2 + 325, 'VIEW HALL OF FAME', {
+        this.add.text(width / 2, height / 2 + 325, isDailyActive() ? 'VIEW DAILY DOSSIER' : 'VIEW HALL OF FAME', {
             fontSize: '32px', color: '#ffffff', fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(3002);
         this.input.keyboard?.once('keydown-ENTER', viewScores);

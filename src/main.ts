@@ -15,6 +15,9 @@ import { PinballPhysicsLab } from './scenes/PinballPhysicsLab';
 import { App } from '@capacitor/app';
 import { currentRun } from './state/RunState';
 import { WeaponType } from './game/config';
+import { DailyBriefingScene } from './scenes/DailyBriefingScene';
+import { DailyPolicyScene } from './scenes/DailyPolicyScene';
+import { DailyResultScene } from './scenes/DailyResultScene';
 
 const hash = window.location.hash;
 if (hash === '#arsenal') {
@@ -29,6 +32,8 @@ if (hash === '#arsenal') {
             currentRun.theaters.active.inventory[type] = Math.max(currentRun.theaters.active.inventory[type] || 0, 20);
         });
 }
+
+const dailyScenes = [DailyBriefingScene, DailyPolicyScene, DailyResultScene];
 
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
@@ -49,10 +54,10 @@ const config: Phaser.Types.Core.GameConfig = {
     scene: hash === '#planck-lab'
         ? [PinballPhysicsLab]
         : (hash === '#procurement' || hash.includes('author'))
-            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene]
+            ? [BootScene, PreloaderScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene, ...dailyScenes]
             : hash === '#arsenal'
-                ? [BootScene, PreloaderScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene]
-                : [BootScene, PreloaderScene, TitleScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab]
+                ? [BootScene, PreloaderScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, TitleScene, ...dailyScenes]
+                : [BootScene, PreloaderScene, TitleScene, DoctrineScene, CombatScene, ReadinessScene, ProcurementScene, MansionScene, EventScene, PressReleaseScene, LeaderboardScene, PinballPhysicsLab, ...dailyScenes]
 };
 
 const game = new Phaser.Game(config);

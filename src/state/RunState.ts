@@ -24,6 +24,8 @@ export interface DeliveryBatch {
 }
 
 export class RunState {
+    /** Ephemeral daily challenge scratch state; never persisted with campaign saves. */
+    public dailyActive = false;
     public campaignSeed: number = newCampaignSeed();
     public randomCounter: number = 0;
     public authorizedProcurementFY?: number;
@@ -232,6 +234,7 @@ export class RunState {
     }
 
     public save() {
+        if (this.dailyActive) return;
         const data = {
             currentFY: this.currentFY,
             taxpayerBurn: this.taxpayerBurn,
