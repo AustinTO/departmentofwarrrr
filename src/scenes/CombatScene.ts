@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { WeaponType, ThreatType, WEAPON_CONFIGS, THREAT_CONFIGS } from '../game/config';
 import type { ThreatConfig } from '../game/config';
-import { CombatSystem } from '../game/CombatSystem';
+import { CombatSystem, isActiveTheaterDefeated } from '../game/CombatSystem';
 import { WaveDirector } from '../game/WaveDirector';
 import { audioManager } from '../managers/AudioManager';
 import { currentRun } from '../state/RunState';
@@ -309,6 +309,13 @@ export class CombatScene extends Phaser.Scene {
         currentRun.contractorProfit += combatProfit + stats.restraintBonus + gradeBonus;
         currentRun.reconcileMansions();
         currentRun.save();
+        // Every completed fiscal-year defense contributes to the local Hall of Fame.
+        // Previously only failures were recorded, and defeat was effectively unreachable.
+        recordScore(localStorage, {
+            fiscalYear: currentRun.currentFY,
+            mansions: currentRun.mansionsBuilt,
+            burn: currentRun.taxpayerBurn
+        });
 
         this.add.rectangle(0, 0, width, height, 0x000000, 0.75)
             .setOrigin(0).setDepth(1000).setInteractive();
@@ -1393,7 +1400,9 @@ export class CombatScene extends Phaser.Scene {
                 currentRun.updateGlobalReadiness();
                 this.combatSystem.recordReadinessLoss(5);
                 this.updateHUD();
-                if (currentRun.globalReadiness === 0) this.gameOver();
+                // A destroyed active theater ends the run; global readiness averages
+                // other theaters and can remain high even after the defended base falls.
+                if (isActiveTheaterDefeated(activeTheater.readiness)) this.gameOver();
             }
         });
     }
