@@ -10,6 +10,8 @@ import { CHARACTERS, characterLine } from '../game/Characters';
 import { scenarioForFiscalYear } from '../game/CombatScenarios';
 import type { CombatScenario } from '../game/CombatScenarios';
 import { PauseMenu } from '../ui/PauseMenu';
+import { CombatBriefing } from '../ui/CombatBriefing';
+import { gameSettings } from '../managers/GameSettings';
 import { SHEETS } from '../game/Sprites';
 import { hostileThreatsNear, pickDistinctTargets, steerSeeker } from '../game/SeekingProjectiles';
 import type { SeekerShotData } from '../game/SeekingProjectiles';
@@ -63,6 +65,7 @@ export class CombatScene extends Phaser.Scene {
     private explosionSoundsThisBurst = 0;
     private paused = false;
     private pauseMenu?: PauseMenu;
+    private briefing?: CombatBriefing;
     private restraintText!: Phaser.GameObjects.Text;
 
     private hudTexts!: { 
@@ -98,6 +101,7 @@ export class CombatScene extends Phaser.Scene {
         this.explosionSoundsThisBurst = 0;
         this.paused = false;
         this.pauseMenu = undefined;
+        this.briefing = undefined;
         this.waveDirector = new WaveDirector(Math.max(1, currentRun.currentFY - 2025), () => currentRun.nextRandom());
         this.scenario = scenarioForFiscalYear(currentRun.currentFY, currentRun.campaignSeed);
 
@@ -156,6 +160,12 @@ export class CombatScene extends Phaser.Scene {
         this.setupHUD(width, height);
         this.add.text(width / 2, 122, this.scenario.location, { fontSize: '20px', color: '#9dd9e8', fontStyle: 'bold', letterSpacing: 1 }).setOrigin(0.5).setDepth(4);
         this.timeText = this.add.text(width / 2, 72, 'FY END: 60s', { fontSize: '42px', color: '#ffffff', fontStyle: 'bold', stroke: '#031019', strokeThickness: 5 }).setOrigin(0.5).setDepth(4);
+        this.add.rectangle(width / 2, 390, width - 132, 58, 0x071d2a, 0.9)
+            .setStrokeStyle(2, 0xffd166, 0.8).setDepth(4);
+        this.add.text(width / 2, 390, `MISSION: ${this.scenario.objective}`, {
+            fontSize: '21px', color: '#ffe3a0', fontStyle: 'bold', align: 'center',
+            wordWrap: { width: width - 170 }
+        }).setOrigin(0.5).setDepth(5);
 
         // Wave Timer
         this.waveTimer = this.time.addEvent({
@@ -204,7 +214,26 @@ export class CombatScene extends Phaser.Scene {
 
         this.input.keyboard?.on('keydown-ESC', () => this.togglePause());
 
-        this.showDoctrineBanner();
+        if (!gameSettings.combatBriefingSeen) this.showCombatBriefing();
+        else this.showDoctrineBanner();
+    }
+
+    /** Pause simulation before showing training, including the first 60-second wave. */
+    private showCombatBriefing() {
+        if (this.isFinishingWave || this.briefing) return;
+        if (!this.paused) {
+            this.paused = true;
+            this.physics.world.pause();
+            if (this.spawnTimer) this.spawnTimer.paused = true;
+            if (this.waveTimer) this.waveTimer.paused = true;
+        }
+        this.pauseMenu?.destroy();
+        this.pauseMenu = undefined;
+        this.briefing = new CombatBriefing(this, () => {
+            this.briefing = undefined;
+            gameSettings.markCombatBriefingSeen();
+            this.resumeFromPause();
+        });
     }
 
     private showDoctrineBanner() {
@@ -236,6 +265,7 @@ export class CombatScene extends Phaser.Scene {
         this.pauseMenu = new PauseMenu(this, {
             title: 'COMBAT PAUSED',
             onResume: () => this.resumeFromPause(),
+            onHelp: () => this.showCombatBriefing(),
             onQuitToTitle: () => {
                 currentRun.save();
                 this.sound.stopAll();
@@ -261,7 +291,8 @@ export class CombatScene extends Phaser.Scene {
         this.sound.stopAll();
         if (this.spawnTimer) this.spawnTimer.remove();
         if (this.waveTimer) this.waveTimer.remove();
-        this.input.enabled = false;
+        // Keep input enabled for the deliberate result-screen Continue action.
+        // All combat actions reject isFinishingWave while the result overlay is open.
         
         const { width, height } = this.scale;
         const stats = this.combatSystem.getStats();
@@ -277,7 +308,8 @@ export class CombatScene extends Phaser.Scene {
         currentRun.reconcileMansions();
         currentRun.save();
 
-        this.add.rectangle(0, 0, width, height, 0x000000, 0.7).setOrigin(0).setDepth(1000);
+        this.add.rectangle(0, 0, width, height, 0x000000, 0.75)
+            .setOrigin(0).setDepth(1000).setInteractive();
         this.add.text(width / 2, height / 2 - 260, 'FISCAL YEAR CONCLUDED', {
             fontSize: '64px',
             color: '#00ffff',
@@ -304,10 +336,22 @@ export class CombatScene extends Phaser.Scene {
             lineSpacing: 5
         }).setOrigin(0.5).setDepth(1001);
 
-        this.time.delayedCall(3800, () => {
-            this.input.enabled = true;
+        let continued = false;
+        const continueYear = () => {
+            if (continued) return;
+            continued = true;
             this.scene.start('ReadinessScene');
-        });
+        };
+        this.add.rectangle(width / 2, height / 2 + 435, 668, 112, 0x087a42, 1)
+            .setStrokeStyle(4, 0xa8ff93).setDepth(1002)
+            .setInteractive({ useHandCursor: true }).on('pointerdown', continueYear);
+        this.add.text(width / 2, height / 2 + 435, 'REVIEW COMPLETE  •  CONTINUE', {
+            fontSize: '30px', color: '#ffffff', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(1003);
+        this.add.text(width / 2, height / 2 + 525, 'Take your time: results stay until you continue.', {
+            fontSize: '19px', color: '#a8c8d3', align: 'center'
+        }).setOrigin(0.5).setDepth(1002);
+        this.input.keyboard?.once('keydown-ENTER', continueYear);
     }
 
     private scheduleNextSpawn() {
@@ -619,7 +663,7 @@ export class CombatScene extends Phaser.Scene {
     }
 
     private handleInput(pointer: Phaser.Input.Pointer) {
-        if (this.paused) return;
+        if (this.paused || this.isFinishingWave) return;
         if (pointer.y < 240 && pointer.x > this.scale.width - 310) return;
         if (pointer.y < 240 && pointer.x < 160) return;
         if (this.weaponWheelBounds?.contains(pointer.x, pointer.y)) return;

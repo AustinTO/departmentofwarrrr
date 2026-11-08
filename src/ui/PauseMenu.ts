@@ -4,6 +4,7 @@ import { SettingsPanel } from './SettingsPanel';
 type PauseMenuOptions = {
     title?: string;
     onResume: () => void;
+    onHelp?: () => void;
     onQuitToTitle: () => void;
 };
 
@@ -30,18 +31,23 @@ export class PauseMenu {
             fontSize: '22px', color: '#9bcbd4', fontStyle: 'bold', align: 'center', wordWrap: { width: width - 120 }
         }).setOrigin(0.5));
 
-        this.addButton(scene, width / 2, height / 2 - 60, 520, 100, 0x087a42, 0xa8ff93, 'RESUME', () => {
+        const baseY = height / 2 - (options.onHelp ? 125 : 60);
+        this.addButton(scene, width / 2, baseY, 520, 100, 0x087a42, 0xa8ff93, 'RESUME', () => {
             this.destroy();
             options.onResume();
         });
 
-        this.addButton(scene, width / 2, height / 2 + 70, 520, 100, 0x126a87, 0x7df4ff, 'SETTINGS', () => {
+        this.addButton(scene, width / 2, baseY + 120, 520, 100, 0x126a87, 0x7df4ff, 'SETTINGS', () => {
             this.settings = new SettingsPanel(scene, {
                 onClose: () => { this.settings = undefined; }
             });
         });
 
-        this.addButton(scene, width / 2, height / 2 + 200, 520, 100, 0x5a1f1f, 0xff765e, 'QUIT TO TITLE', () => {
+        if (options.onHelp) {
+            this.addButton(scene, width / 2, baseY + 240, 520, 100, 0x283d55, 0xffd166, 'HOW TO PLAY', options.onHelp);
+        }
+
+        this.addButton(scene, width / 2, baseY + (options.onHelp ? 360 : 260), 520, 100, 0x5a1f1f, 0xff765e, 'QUIT TO TITLE', () => {
             this.destroy();
             options.onQuitToTitle();
         });
